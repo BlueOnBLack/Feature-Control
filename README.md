@@ -10,7 +10,7 @@ Use at your own risk. Altering features may lead to system instability, crashes,
 
 Always back up your system before making significant changes.
 
-The logic and offsets ($Shift calculations) are based on reverse-engineered information and may break in future Windows updates.
+The logic and offsets are based on reverse-engineered information and may break in future Windows updates.
 
 🌟 Features
 
@@ -34,7 +34,7 @@ Permissions: The script must be run with Administrator privileges.
 
 1. Load the Function
 
-First, save the script content (containing the Adjust-Feature function) as a .ps1 file (e.g., FeatureManager.ps1) and load it into your PowerShell session:
+First, save the script content as a .ps1 file (e.g., FeatureManager.ps1) and load it into your PowerShell session:
 
 # Run PowerShell as Administrator
 . .\FeatureManager.ps1
@@ -45,37 +45,29 @@ First, save the script content (containing the Adjust-Feature function) as a .ps
 The function requires at least two mandatory parameters: the Feature ID(s) and the desired state.
 
 Adjust-Feature
-    -FeatureIds <UInt32[]>  # One or more Windows Feature IDs (e.g., 48796508)
-    -State <String>         # Must be "Enable", "Disable", or "Reset"
-    [-Global]               # Optional: Apply feature configuration globally (Higher priority, typically system-wide)
+    -FeatureIds <UInt32[]>   # One or more Windows Feature IDs (e.g., 48796508)
+    -State <String>          # Must be "Enable", "Disable", or "Reset"
+    [-Global]                # Optional: Apply feature configuration globally (Higher priority, typically system-wide)
 
 
 3. Examples
 
 Example 1: Enable a Feature
 
-Enables feature ID 48796508 (assuming this is the feature you wish to activate).
-
 Adjust-Feature -FeatureIds @(48796508) -State Enable
 
 
 Example 2: Disable Multiple Features
-
-Disables feature IDs 12345678 and 87654321.
 
 Adjust-Feature -FeatureIds @(12345678, 87654321) -State Disable
 
 
 Example 3: Reset a Feature to Default
 
-Removes any custom overrides and reverts feature ID 48796508 to its default system state.
-
 Adjust-Feature -FeatureIds @(48796508) -State Reset
 
 
 Example 4: Enable Globally (Higher Priority)
-
-Enables a feature using the higher-priority global registry path (0x0a priority) instead of the default user path (0x08 priority).
 
 Adjust-Feature -FeatureIds @(48796508) -State Enable -Global
 
