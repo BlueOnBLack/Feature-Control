@@ -1,6 +1,7 @@
 # Adjust-Feature PowerShell Script
 
 This script provides a single PowerShell function, `Adjust-Feature`, to enable, disable, or reset hidden Windows features using undocumented Native API calls (similar to tools like ViVeTool and Mach2).
+Based on ViveTool Source code. Also Borrow some libraries from system informer Project
 
 ## ⚠️ Warning and Disclaimer
 
