@@ -46,12 +46,13 @@ function Adjust-Feature {
         [ValidateSet("Enable","Disable", "Reset")]
         [string]$State,
 
-        [switch]$Global
+        [switch]$Global,
+        [switch]$SysCall
     )
     $results = $False
-    $Priority = if ($Global) { 0x0a } else { 0x08 }
     $BootPending = 0x01
     $ConfigurationState = 0x11
+    $Priority = if ($Global -and $State -ne "Reset") { 0x0a } else { 0x08 }
     $OperationType = if ($State -match "Enable|Disable") { 0x01 -bor 0x02 } else { 0x04 }
     $EnabledState = if ($State -eq 'Enable') { 0x02 } elseif ($State -eq 'Disable') { 0x01 } else { 0x00 }
 
@@ -112,6 +113,7 @@ function Adjust-Feature {
             @('NtSetSystemInformation',       'ntdll.dll', [Int32], @([Int32], [IntPtr], [Int32])),
             @('RtlGetSystemBootStatus',       'ntdll.dll', [Int32], @([Int], [Int32].MakeByRefType(), [Int], [IntPtr])),
             @('RtlSetSystemBootStatus',       'ntdll.dll', [Int32], @([Int], [Int32].MakeByRefType(), [Int], [IntPtr])),
+            @('RtlSetFeatureConfigurations',  'ntdll.dll', [Int32], @([Int].MakeByRefType(), [Int32], [IntPtr], [Int])),
             @('RtlCreateBootStatusDataFile',  'ntdll.dll', [Int32], @([IntPtr])),
             @('RtlQueryFeatureConfiguration', 'ntdll.dll', [Int32], @([Int], [Int], [Int].MakeByRefType(), [IntPtr])),
             @('RtlQueryFeatureConfigurationChangeStamp', 'ntdll.dll', [Int32], @())
@@ -188,6 +190,9 @@ function Adjust-Feature {
                                                         0x00  # IsWexpConfiguration ? FALSE -> FeatureEnabledStateOptionsNone
                                                     }
                         }
+
+                        # for later, Registry Clean
+                        $Priority = $ConfigObj.Priority
                     }
                 }
                 finally {
@@ -219,11 +224,21 @@ function Adjust-Feature {
             }
         }
 
-        $ret = $RTL::NtSetSystemInformation(
-            [Int64]210,
-            $updatePackage,
-            ($Offset.BaseSize + $PayloadSize)
-        )
+        if ($SysCall) {
+            $ret = $RTL::NtSetSystemInformation(
+              [Int64]210,
+              $updatePackage,
+              ($Offset.BaseSize + $PayloadSize))
+        } else {
+            $ret = $RTL::RtlSetFeatureConfigurations(
+              ([ref]$PreviousStamp),
+              0x01,
+              ([IntPtr]::Add($updatePackage,$Offset.BaseSize)),
+              $Count 
+            )
+        }
+        #>
+
         if ($ret -ge 0) {
             
             $results = $true
@@ -265,7 +280,11 @@ function Adjust-Feature {
 
             if ($State -eq "Reset") {
                 try {
+                    ## Technically is wrong, case of Global, 0x0a, we write to different address
+                    ## And, Also. maybe, in other cases, we might not use this registry key at all
                     Remove-Item -Path $targetPathUser -Recurse -Force -ErrorAction SilentlyContinue
+
+                    # Also, remove any remains's if exist, in global Key
                     Remove-ItemProperty -Path $targetPathGlobal -Name $ObfuscateId -ErrorAction SilentlyContinue
                 }
                 catch {}
@@ -313,7 +332,6 @@ function Adjust-Feature {
     return $false
 }
 
-Adjust-Feature -FeatureId @(48796508) -State Enable
 Adjust-Feature -FeatureId @(48796508) -State Disable
 Adjust-Feature -FeatureId @(48796508) -State Reset
-Adjust-Feature -FeatureId @(48796508) -State Reset
+Adjust-Feature -FeatureId @(48796508) -State Enable
