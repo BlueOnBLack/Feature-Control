@@ -447,7 +447,7 @@ function Adjust-Feature {
             @('RtlSetSystemBootStatus',       'ntdll.dll', [Int32], @([Int], [Int32].MakeByRefType(), [Int], [IntPtr])),
             @('RtlSetFeatureConfigurations',  'ntdll.dll', [Int32], @([Int].MakeByRefType(), [Int32], [IntPtr], [Int])),
             @('RtlCreateBootStatusDataFile',  'ntdll.dll', [Int32], @([IntPtr])),
-            @('RtlQueryFeatureConfiguration', 'ntdll.dll', [Int32], @([Int], [Int], [Int].MakeByRefType(), [IntPtr])),
+            @('RtlQueryFeatureConfiguration', 'ntdll.dll', [Int32], @([UInt32], [UInt32], [UInt64].MakeByRefType(), [IntPtr])),
             @('RtlQueryFeatureConfigurationChangeStamp', 'ntdll.dll', [Int32], @())
         ) | % {
             $Module.DefinePInvokeMethod(($_[0]), ($_[1]), 22, 1, [Type]($_[2]), [Type[]]($_[3]), 1, 3).SetImplementationFlags(128) # Def` 128, fail-safe 0
@@ -490,7 +490,7 @@ function Adjust-Feature {
         foreach ($Feature in $FeatureIds) {
             $ConfigObj = $null
             if ($Action -eq "Reset") {
-                [Int32]$changeStamp = 0
+                $changeStamp = 0L
                 [IntPtr]$ConfigPtr = [Marshal]::AllocHGlobal(0x0C)
                 $hr = $RTL::RtlQueryFeatureConfiguration(
                         [Int32]$Feature,
