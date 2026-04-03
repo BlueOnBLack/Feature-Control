@@ -491,15 +491,15 @@ function Adjust-Feature {
             $ConfigObj = $null
             if ($Action -eq "Reset") {
                 [Int32]$changeStamp = 0
-                [IntPtr]$ConfigPtr = [Marshal]::AllocHGlobal(0x0A)
-                $ret = $RTL::RtlQueryFeatureConfiguration(
+                [IntPtr]$ConfigPtr = [Marshal]::AllocHGlobal(0x0C)
+                $hr = $RTL::RtlQueryFeatureConfiguration(
                         [Int32]$Feature,
                         0x01,
                         ([ref]$changeStamp),
                         $ConfigPtr
                     )
                 try {
-                    if ($ret -eq 0) {
+                    if ($hr -eq 0) {
                         $bytes = New-Object byte[] 12
                         [Marshal]::Copy($ConfigPtr, $bytes, 0, 12)
                         $featureId       = [BitConverter]::ToUInt32($bytes, 0x00)
@@ -701,21 +701,14 @@ Write-Host
 
 Adjust-Feature `
     -FeatureIds @(57517687, 58755790, 59064570) `
-    -Action Reset `
+    -Action Disable `
     -Mode User `
     -Log
 Write-Host
 
 Adjust-Feature `
     -FeatureIds @(57517687, 58755790, 59064570) `
-    -Action Enable `
-    -Mode Policy `
-    -Log
-Write-Host
-
-Adjust-Feature `
-    -FeatureIds @(57517687, 58755790, 59064570) `
     -Action Reset `
-    -Mode Policy `
+    -Mode User `
     -Log
 Write-Host
