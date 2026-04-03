@@ -1,4 +1,4 @@
-﻿using namespace System
+using namespace System
 using namespace System.IO
 using namespace System.Reflection
 using namespace System.Reflection.Emit
@@ -7,6 +7,164 @@ using namespace System.Management.Automation
 
 Clear-Host
 Write-Host
+
+<#
+Based on ViveTool Source code.
+namespace --> Albacore.ViVeTool
+           
+@ Mach2
+@ https://github.com/riverar/mach2
+
+@ ViVe \ ViVeTool GUI
+@ https://github.com/thebookisclosed/ViVe
+@ https://github.com/PeterStrick/ViVeTool-GUI
+
+@ phnt Headers [private]
+@ https://github.com/winsiderss/systeminformer
+@ https://github.com/winsiderss/systeminformer/blob/master/phnt/include/ntrtl.h
+
+@ Consumer_ESU_Enrollment.ps1
+@ https://github.com/abbodi1406/ConsumerESU/blob/master/Consumer_ESU_Enrollment.ps1
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* RTL_FEATURE_CONFIGURATION_UPDATE - NtDoc
+* https://ntdoc.m417z.com/rtl_feature_configuration_update
+
+// Ntoskrnl.exe
+// __int64 __fastcall RtlpFcUpdateFeatureConfiguration(_DWORD *a1, __int64 a2, char *a3, size_t a4, void *a5, size_t *a6)
+// v18 += 32;
+// qsort(a3, a4, 0x20ui64, RtlpFcCompareUpdates);
+
+// ntdll.dll
+// __int64 __fastcall RtlSetFeatureConfigurations(_QWORD *a1, int a2, const void *a3, unsigned __int64 a4)
+// v8 = 32i64 * (unsigned int)a4;
+
+// ntoskrnl.exe, Function RtlpFcUpdateFeature
+// __int64 __fastcall RtlpFcUpdateFeature(__int64 a1, __int64 a2)
+{
+    int v2; // eax
+    int v5; // ecx
+    int v6; // edx
+    __int64 result; // rax
+
+    v2 = *(_DWORD *)(a2 + 28);
+    if ( (v2 & 1) != 0 )
+    {
+    *(_DWORD *)(a1 + 4) ^= (*(_DWORD *)(a1 + 4) ^ (16 * *(_DWORD *)(a2 + 8))) & 0x30;
+    v2 = *(_DWORD *)(a2 + 28);
+    }
+    if ( (v2 & 2) != 0 )
+    {
+    *(_DWORD *)(a1 + 4) ^= (*(_DWORD *)(a1 + 4) ^ (*(unsigned __int8 *)(a2 + 16) << 8)) & 0x3F00;
+    v5 = *(_DWORD *)(a1 + 4);
+    *(_DWORD *)(a1 + 8) = *(_DWORD *)(a2 + 24);
+    v6 = v5 ^ ((unsigned __int16)v5 ^ (unsigned __int16)((unsigned __int16)*(_DWORD *)(a2 + 20) << 14)) & 0xC000;
+    *(_DWORD *)(a1 + 4) = v6;
+    }
+    else
+    {
+    v6 = *(_DWORD *)(a1 + 4);
+    }
+    result = v6 ^ ((unsigned __int8)v6 ^ (unsigned __int8)((unsigned __int8)*(_DWORD *)(a2 + 12) << 6)) & 0x40u;
+    *(_DWORD *)(a1 + 4) = result;
+    return result;
+}
+
+typedef struct _RTL_FEATURE_CONFIGURATION_UPDATE
+{
+    RTL_FEATURE_ID FeatureId;
+    RTL_FEATURE_CONFIGURATION_PRIORITY Priority;
+    RTL_FEATURE_ENABLED_STATE EnabledState;
+    RTL_FEATURE_ENABLED_STATE_OPTIONS EnabledStateOptions;
+    RTL_FEATURE_VARIANT_PAYLOAD_KIND VariantPayloadKind;
+    RTL_FEATURE_VARIANT_PAYLOAD VariantPayload;
+    RTL_FEATURE_CONFIGURATION_OPERATION Operation;
+} RTL_FEATURE_CONFIGURATION_UPDATE, *PRTL_FEATURE_CONFIGURATION_UPDATE;
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    
+* _RTL_FEATURE_CONFIGURATION
+* https://ntdoc.m417z.com/rtl_feature_configuration
+* https://www.vergiliusproject.com/kernels/x64/windows-10/21h1/_RTL_FEATURE_CONFIGURATION
+
+[DllImport("ntdll.dll")]
+public static extern int RtlQueryFeatureConfiguration(
+    uint featureId,
+    RTL_FEATURE_CONFIGURATION_TYPE featureConfigurationType,
+    ref ulong changeStamp,
+    out RTL_FEATURE_CONFIGURATION featureConfiguration
+);
+
+// Ntoskrnl.exe, IDA, Local Types
+00000000 _RTL_FEATURE_CONFIGURATION struc ; (sizeof=0xC, align=0x4)
+00000000 FeatureId       dd ?        ; 0x0, 4 bytes ? Feature identifier
+00000004 Option          dw ?        ; 0x4, 2 bytes ? packed bitfield of options
+00000006 padding         dw ?        ; 0x6, 2 bytes ? alignment padding
+00000008 VariantPayload  dd ?        ; 0x8, 4 bytes ? payload value
+0000000C _RTL_FEATURE_CONFIGURATION ends
+
+//0xc bytes (sizeof)
+struct _RTL_FEATURE_CONFIGURATION
+{
+    ULONG FeatureId;                                                        //0x0
+    ULONG Priority:4;                                                       //0x4
+    ULONG EnabledState:2;                                                   //0x4
+    ULONG IsWexpConfiguration:1;                                            //0x4
+    ULONG HasSubscriptions:1;                                               //0x4
+    ULONG Variant:6;                                                        //0x4
+    ULONG VariantPayloadKind:2;                                             //0x4
+    ULONG VariantPayload;                                                   //0x8
+};
+
+// ntoskrnl.exe
+// __int64 __fastcall wil_details_StagingConfig_QueryFeatureState(__int64 a1, __int64 a2, int a3, int a4)
+{
+    *(_DWORD *)(v9 + 12) = v7;
+    *(_DWORD *)(v9 + 8) = v23 >> 30;
+    *(_BYTE *)(v9 + 4) = HIBYTE(v23) & 0x3F;
+    *(_DWORD *)(v9 + 20) = (v23 >> 1) & 1;
+    v24 = (v23 >> 12) & 3;
+    if ( v24 || (v24 = (v23 >> 10) & 3) != 0 )
+    {
+    *(_DWORD *)v9 = v24;
+    }
+    else
+    {
+    v25 = (v23 >> 8) & 3;
+    if ( v25 )
+        *(_DWORD *)v9 = v25;
+    }
+    v14 = 1;
+}
+
+// EditionUpgradeManagerObj.dll
+// __int64 __fastcall wil_QueryFeatureState(__int64 a1, unsigned int a2, int a3, int a4, _DWORD *a5, _DWORD *a6)
+{
+    ....
+    v14 = HIDWORD(v18);
+    v10 = 1;
+    v15 = HIDWORD(v18);
+    *(_DWORD *)(a1 + 12) = v19;
+    *(_DWORD *)(a1 + 8) = (unsigned __int16)v15 >> 14;
+    *(_DWORD *)a1 = (v15 >> 4) & 3;
+    *(_BYTE *)(a1 + 4) = BYTE1(v14) & 0x3F;
+    *(_DWORD *)(a1 + 16) = (v14 >> 7) & 1;
+    *(_DWORD *)(a1 + 20) = (v14 >> 6) & 1;
+}
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* _RTL_FEATURE_ENABLED_STATE_OPTIONS
+* https://www.vergiliusproject.com/kernels/x64/windows-11/24h2/_RTL_FEATURE_ENABLED_STATE_OPTIONS
+
+//0x4 bytes (sizeof)
+enum _RTL_FEATURE_ENABLED_STATE_OPTIONS
+{
+    FeatureEnabledStateOptionsNone = 0,
+    FeatureEnabledStateOptionsWexpConfig = 1
+}; 
+#>
 
 Function Bor {
     param ([int[]] $Array) 
@@ -186,164 +344,6 @@ function New-Struct {
 
     $StructBuilder.CreateType()
 }
-
-<#
-Based on ViveTool Source code.
-namespace --> Albacore.ViVeTool
-           
-@ Mach2
-@ https://github.com/riverar/mach2
-
-@ ViVe \ ViVeTool GUI
-@ https://github.com/thebookisclosed/ViVe
-@ https://github.com/PeterStrick/ViVeTool-GUI
-
-@ phnt Headers [private]
-@ https://github.com/winsiderss/systeminformer
-@ https://github.com/winsiderss/systeminformer/blob/master/phnt/include/ntrtl.h
-
-@ Consumer_ESU_Enrollment.ps1
-@ https://github.com/abbodi1406/ConsumerESU/blob/master/Consumer_ESU_Enrollment.ps1
-
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-* RTL_FEATURE_CONFIGURATION_UPDATE - NtDoc
-* https://ntdoc.m417z.com/rtl_feature_configuration_update
-
-// Ntoskrnl.exe
-// __int64 __fastcall RtlpFcUpdateFeatureConfiguration(_DWORD *a1, __int64 a2, char *a3, size_t a4, void *a5, size_t *a6)
-// v18 += 32;
-// qsort(a3, a4, 0x20ui64, RtlpFcCompareUpdates);
-
-// ntdll.dll
-// __int64 __fastcall RtlSetFeatureConfigurations(_QWORD *a1, int a2, const void *a3, unsigned __int64 a4)
-// v8 = 32i64 * (unsigned int)a4;
-
-// ntoskrnl.exe, Function RtlpFcUpdateFeature
-// __int64 __fastcall RtlpFcUpdateFeature(__int64 a1, __int64 a2)
-{
-    int v2; // eax
-    int v5; // ecx
-    int v6; // edx
-    __int64 result; // rax
-
-    v2 = *(_DWORD *)(a2 + 28);
-    if ( (v2 & 1) != 0 )
-    {
-    *(_DWORD *)(a1 + 4) ^= (*(_DWORD *)(a1 + 4) ^ (16 * *(_DWORD *)(a2 + 8))) & 0x30;
-    v2 = *(_DWORD *)(a2 + 28);
-    }
-    if ( (v2 & 2) != 0 )
-    {
-    *(_DWORD *)(a1 + 4) ^= (*(_DWORD *)(a1 + 4) ^ (*(unsigned __int8 *)(a2 + 16) << 8)) & 0x3F00;
-    v5 = *(_DWORD *)(a1 + 4);
-    *(_DWORD *)(a1 + 8) = *(_DWORD *)(a2 + 24);
-    v6 = v5 ^ ((unsigned __int16)v5 ^ (unsigned __int16)((unsigned __int16)*(_DWORD *)(a2 + 20) << 14)) & 0xC000;
-    *(_DWORD *)(a1 + 4) = v6;
-    }
-    else
-    {
-    v6 = *(_DWORD *)(a1 + 4);
-    }
-    result = v6 ^ ((unsigned __int8)v6 ^ (unsigned __int8)((unsigned __int8)*(_DWORD *)(a2 + 12) << 6)) & 0x40u;
-    *(_DWORD *)(a1 + 4) = result;
-    return result;
-}
-
-typedef struct _RTL_FEATURE_CONFIGURATION_UPDATE
-{
-    RTL_FEATURE_ID FeatureId;
-    RTL_FEATURE_CONFIGURATION_PRIORITY Priority;
-    RTL_FEATURE_ENABLED_STATE EnabledState;
-    RTL_FEATURE_ENABLED_STATE_OPTIONS EnabledStateOptions;
-    RTL_FEATURE_VARIANT_PAYLOAD_KIND VariantPayloadKind;
-    RTL_FEATURE_VARIANT_PAYLOAD VariantPayload;
-    RTL_FEATURE_CONFIGURATION_OPERATION Operation;
-} RTL_FEATURE_CONFIGURATION_UPDATE, *PRTL_FEATURE_CONFIGURATION_UPDATE;
-
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    
-* _RTL_FEATURE_CONFIGURATION
-* https://ntdoc.m417z.com/rtl_feature_configuration
-* https://www.vergiliusproject.com/kernels/x64/windows-10/21h1/_RTL_FEATURE_CONFIGURATION
-
-[DllImport("ntdll.dll")]
-public static extern int RtlQueryFeatureConfiguration(
-    uint featureId,
-    RTL_FEATURE_CONFIGURATION_TYPE featureConfigurationType,
-    ref ulong changeStamp,
-    out RTL_FEATURE_CONFIGURATION featureConfiguration
-);
-
-// Ntoskrnl.exe, IDA, Local Types
-00000000 _RTL_FEATURE_CONFIGURATION struc ; (sizeof=0xC, align=0x4)
-00000000 FeatureId       dd ?        ; 0x0, 4 bytes — Feature identifier
-00000004 Option          dw ?        ; 0x4, 2 bytes — packed bitfield of options
-00000006 padding         dw ?        ; 0x6, 2 bytes — alignment padding
-00000008 VariantPayload  dd ?        ; 0x8, 4 bytes — payload value
-0000000C _RTL_FEATURE_CONFIGURATION ends
-
-//0xc bytes (sizeof)
-struct _RTL_FEATURE_CONFIGURATION
-{
-    ULONG FeatureId;                                                        //0x0
-    ULONG Priority:4;                                                       //0x4
-    ULONG EnabledState:2;                                                   //0x4
-    ULONG IsWexpConfiguration:1;                                            //0x4
-    ULONG HasSubscriptions:1;                                               //0x4
-    ULONG Variant:6;                                                        //0x4
-    ULONG VariantPayloadKind:2;                                             //0x4
-    ULONG VariantPayload;                                                   //0x8
-};
-
-// ntoskrnl.exe
-// __int64 __fastcall wil_details_StagingConfig_QueryFeatureState(__int64 a1, __int64 a2, int a3, int a4)
-{
-    *(_DWORD *)(v9 + 12) = v7;
-    *(_DWORD *)(v9 + 8) = v23 >> 30;
-    *(_BYTE *)(v9 + 4) = HIBYTE(v23) & 0x3F;
-    *(_DWORD *)(v9 + 20) = (v23 >> 1) & 1;
-    v24 = (v23 >> 12) & 3;
-    if ( v24 || (v24 = (v23 >> 10) & 3) != 0 )
-    {
-    *(_DWORD *)v9 = v24;
-    }
-    else
-    {
-    v25 = (v23 >> 8) & 3;
-    if ( v25 )
-        *(_DWORD *)v9 = v25;
-    }
-    v14 = 1;
-}
-
-// EditionUpgradeManagerObj.dll
-// __int64 __fastcall wil_QueryFeatureState(__int64 a1, unsigned int a2, int a3, int a4, _DWORD *a5, _DWORD *a6)
-{
-    ....
-    v14 = HIDWORD(v18);
-    v10 = 1;
-    v15 = HIDWORD(v18);
-    *(_DWORD *)(a1 + 12) = v19;
-    *(_DWORD *)(a1 + 8) = (unsigned __int16)v15 >> 14;
-    *(_DWORD *)a1 = (v15 >> 4) & 3;
-    *(_BYTE *)(a1 + 4) = BYTE1(v14) & 0x3F;
-    *(_DWORD *)(a1 + 16) = (v14 >> 7) & 1;
-    *(_DWORD *)(a1 + 20) = (v14 >> 6) & 1;
-}
-
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-* _RTL_FEATURE_ENABLED_STATE_OPTIONS
-* https://www.vergiliusproject.com/kernels/x64/windows-11/24h2/_RTL_FEATURE_ENABLED_STATE_OPTIONS
-
-//0x4 bytes (sizeof)
-enum _RTL_FEATURE_ENABLED_STATE_OPTIONS
-{
-    FeatureEnabledStateOptionsNone = 0,
-    FeatureEnabledStateOptionsWexpConfig = 1
-}; 
-#>
 function Adjust-Feature {
     [CmdletBinding()]
     param(
@@ -367,7 +367,7 @@ function Adjust-Feature {
     $ConfigurationState = 0x11
     $Priority = if ($Mode -eq "Policy") {  0x0a } else { 0x08 }
     $OperationType = if ($Action -match "Enable|Disable") { 0x01 -bor 0x02 } else { 0x04 }
-    $Operation = if ($Action -eq 'Enable') { 0x02 } elseif ($Action -eq 'Disable') { 0x01 } else { 0x00 }
+    $EnabledState = if ($Action -eq 'Enable') { 0x02 } elseif ($Action -eq 'Disable') { 0x01 } else { 0x00 }
 
     if (!([Security.Principal.WindowsIdentity]::GetCurrent().Groups.Value -contains "S-1-5-32-544")) {
         Write-Error "User doesn't belong to Administrator's group"
@@ -423,7 +423,7 @@ function Adjust-Feature {
         $update.Priority            = $Priority
         $update.EnabledState        = $EnabledState
         $update.EnabledStateOptions = $EnabledStateOptions
-        $update.VariantFlags        = $EnabledState
+        $update.VariantFlags        = $VariantFlags
         $update.VariantPayloadKind  = $VariantPayloadKind
         $update.VariantPayload      = $VariantPayload
         $update.Operation           = $Operation
