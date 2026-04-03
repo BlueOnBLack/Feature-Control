@@ -49,10 +49,12 @@ First, save the script content as a `.ps1` file (e.g., `FeatureManager.ps1`) and
 The function requires at least two mandatory parameters: the Feature ID(s) and the desired state.
 
 ```powershell
-Adjust-Feature
-    -FeatureIds <UInt32[]>   # One or more Windows Feature IDs (e.g., 48796508)
-    -State <String>          # Must be "Enable", "Disable", or "Reset"
-    [-Global]                # Optional: Apply feature configuration globally (Higher priority, typically system-wide)
+Adjust-Feature `
+    -FeatureIds @(?, ?, ?) `
+    -Action ? `
+    -Mode ?
+    [-Log]
+Write-Host
 ```
 
 ### 3. Examples
