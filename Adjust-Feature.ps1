@@ -71,29 +71,45 @@ namespace --> Albacore.ViVeTool
     return result;
 }
 
+typedef enum _RTL_FEATURE_CONFIGURATION_PRIORITY
+{
+} RTL_FEATURE_CONFIGURATION_PRIORITY, * PRTL_FEATURE_CONFIGURATION_PRIORITY;
+typedef enum _RTL_FEATURE_ENABLED_STATE
+{
+} RTL_FEATURE_ENABLED_STATE;
+typedef enum _RTL_FEATURE_VARIANT_PAYLOAD_KIND
+{
+} RTL_FEATURE_VARIANT_PAYLOAD_KIND, * PRTL_FEATURE_VARIANT_PAYLOAD_KIND;
+typedef enum _RTL_FEATURE_CONFIGURATION_OPERATION
+{
+} RTL_FEATURE_CONFIGURATION_OPERATION, * PRTL_FEATURE_CONFIGURATION_OPERATION;
+
 typedef struct _RTL_FEATURE_CONFIGURATION_UPDATE
 {
-    RTL_FEATURE_ID FeatureId;
-    RTL_FEATURE_CONFIGURATION_PRIORITY Priority;
-    RTL_FEATURE_ENABLED_STATE EnabledState;
-    RTL_FEATURE_ENABLED_STATE_OPTIONS EnabledStateOptions;
+    /* 0x00 */ ULONG FeatureId;
+    /* 0x04 */ RTL_FEATURE_CONFIGURATION_PRIORITY Priority;
+    /* 0x08 */ RTL_FEATURE_ENABLED_STATE EnabledState;
 
-    union
-    {
+    /* 0x0C */ ULONG PackedOptions;       // Read at a2 + 12
+
+    /* 0x10 */ UCHAR EnabledStateOptions; // Read at a2 + 16 (The byte access)
+    /* 0x11 */ UCHAR Reserved[3];         // Padding to reach next 4-byte boundary
+
+    /* 0x14 */ union {
         ULONG Flags;
-        struct
-        {
+        struct {
             ULONG Variant : 6;
             ULONG ChangeTimeUpgrade : 1;
             ULONG HasGroupBypass : 1;
             ULONG Reserved : 24;
         } FeatureFlags;
-    } FeatureConfig;
+    } FeatureConfig; // Read at a2 + 20
 
-    RTL_FEATURE_VARIANT_PAYLOAD_KIND VariantPayloadKind;
-    RTL_FEATURE_VARIANT_PAYLOAD VariantPayload;
-    RTL_FEATURE_CONFIGURATION_OPERATION Operation;
-} RTL_FEATURE_CONFIGURATION_UPDATE, * PRTL_FEATURE_CONFIGURATION_UPDATE;
+    /* 0x18 */ ULONG VariantPayload;      // Read at a2 + 24
+
+    /* 0x1C */ RTL_FEATURE_CONFIGURATION_OPERATION Operation; // Read at a2 + 28
+
+} RTL_FEATURE_CONFIGURATION_UPDATE;
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     
@@ -395,14 +411,17 @@ function Adjust-Feature {
             -Module (New-Module -ModuleName RTL_FEATURE_CONFIGURATION_UPDATE) `
             -FullName RTL_FEATURE_CONFIGURATION_UPDATE `
             -StructFields @{
-                FeatureId            = New-field 0 UInt32
-                Priority             = New-field 1 Int32
-                EnabledState         = New-field 2 Int32
-                EnabledStateOptions  = New-field 3 Int32
-                VariantFlags         = New-field 4 Int32
-                VariantPayloadKind   = New-field 5 UInt32
-                VariantPayload       = New-field 6 UInt32
-                Operation            = New-field 7 Int32
+                FeatureId           = New-field 0  UInt32   # 0x00
+                Priority            = New-field 1  Int32    # 0x04
+                EnabledState        = New-field 2  Int32    # 0x08
+                PackedOptions       = New-field 3  Int32    # 0x0C (The mask 0x40 source)
+                EnabledStateOptions = New-field 4  Byte     # 0x10 (The byte read at a2+16)
+                reserved1           = New-field 5  byte     # 0x10 ++
+                reserved2           = New-field 6  byte     # 0x10 ++
+                reserved3           = New-field 7  byte     # 0x10 ++
+                VariantFlags        = New-field 8  Int32    # 0x14 (The bits at a2+20)
+                VariantPayload      = New-field 9 UInt32    # 0x18 (The value at a2+24)
+                Operation           = New-field 10 Int32    # 0x1C (The v2 check at a2+28)
             } | Out-Null
     }
     function Obfuscate-FeatureId {
@@ -434,13 +453,13 @@ function Adjust-Feature {
             [int]     $Operation = 0x0
         )
 
-        $update = [Activator]::CreateInstance([RTL_FEATURE_CONFIGURATION_UPDATE])
+        [RTL_FEATURE_CONFIGURATION_UPDATE]$update = [Activator]::CreateInstance([RTL_FEATURE_CONFIGURATION_UPDATE])
         $update.FeatureId           = $FeatureId
         $update.Priority            = $Priority
         $update.EnabledState        = $EnabledState
+        $update.PackedOptions       = 0x0
         $update.EnabledStateOptions = $EnabledStateOptions
         $update.VariantFlags        = $VariantFlags
-        $update.VariantPayloadKind  = $VariantPayloadKind
         $update.VariantPayload      = $VariantPayload
         $update.Operation           = $Operation
 
