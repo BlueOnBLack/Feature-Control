@@ -77,16 +77,32 @@ typedef struct _RTL_FEATURE_CONFIGURATION_UPDATE
     RTL_FEATURE_CONFIGURATION_PRIORITY Priority;
     RTL_FEATURE_ENABLED_STATE EnabledState;
     RTL_FEATURE_ENABLED_STATE_OPTIONS EnabledStateOptions;
+
+    union
+    {
+        ULONG Flags;
+        struct
+        {
+            ULONG Variant : 6;
+            ULONG ChangeTimeUpgrade : 1;
+            ULONG HasGroupBypass : 1;
+            ULONG Reserved : 24;
+        } FeatureFlags;
+    } FeatureConfig;
+
     RTL_FEATURE_VARIANT_PAYLOAD_KIND VariantPayloadKind;
     RTL_FEATURE_VARIANT_PAYLOAD VariantPayload;
     RTL_FEATURE_CONFIGURATION_OPERATION Operation;
-} RTL_FEATURE_CONFIGURATION_UPDATE, *PRTL_FEATURE_CONFIGURATION_UPDATE;
+} RTL_FEATURE_CONFIGURATION_UPDATE, * PRTL_FEATURE_CONFIGURATION_UPDATE;
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     
 * _RTL_FEATURE_CONFIGURATION
 * https://ntdoc.m417z.com/rtl_feature_configuration
 * https://www.vergiliusproject.com/kernels/x64/windows-10/21h1/_RTL_FEATURE_CONFIGURATION
+
+-- Same version, just compact one, 
+-- instead of 32 bytes, just 12 bytes
 
 [DllImport("ntdll.dll")]
 public static extern int RtlQueryFeatureConfiguration(
