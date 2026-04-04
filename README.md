@@ -49,12 +49,58 @@ First, save the script content as a `.ps1` file (e.g., `FeatureManager.ps1`) and
 The function requires at least two mandatory parameters: the Feature ID(s) and the desired state.
 
 ```powershell
-Adjust-Feature `
-    -FeatureIds @(?, ?, ?) `
-    -Action ? `
-    -Mode ?
-    [-Log]
+Clear-Host
 Write-Host
+
+$Feature = 58755790
+$Features = @(57517687, 58755790, 59064570)
+
+Write-Host 'Mode: Enable' -ForegroundColor Green -NoNewline
+
+Set-FeatureConfiguration -FeatureIds $Feature -Action Enable -Mode User | Out-Null
+Set-FeatureConfiguration -FeatureIds $Feature -Action Enable -Mode Policy | Out-Null
+Query-FeatureConfiguration -Feature $Feature # -OutList | ? FeatureId -eq $Feature
+
+Write-Host "Mode: Disable`n" -ForegroundColor Green
+
+Set-FeatureConfiguration -FeatureIds $Feature -Action Disable -Mode User | Out-Null
+Set-FeatureConfiguration -FeatureIds $Feature -Action Disable -Mode Policy | Out-Null
+Query-FeatureConfiguration -Feature $Feature # -OutList | ? FeatureId -eq $Feature
+
+Write-Host "Mode: Reset`n" -ForegroundColor Green
+
+Set-FeatureConfiguration -FeatureIds $Feature -Action Reset -Mode User | Out-Null
+Set-FeatureConfiguration -FeatureIds $Feature -Action Reset -Mode Policy | Out-Null
+Query-FeatureConfiguration -Feature $Feature # -OutList | ? FeatureId -eq $Feature
+
+return
+
+Clear-Host
+Write-Host
+
+$Feature = 58755790
+$Features = @(57517687, 58755790, 59064570)
+
+Write-Host 'Mode: Enable' -ForegroundColor Green -NoNewline
+
+Set-WnfFeatureConfig -Store User -Mode Enable -Features $Feature | Out-Null
+Set-WnfFeatureConfig -Store Machine -Mode Enable -Features $Feature | Out-Null
+Query-WnfFeatureConfig -Store User| ? FeatureId -eq $Feature
+Query-WnfFeatureConfig -Store Machine | ? FeatureId -eq $Feature
+
+Write-Host "Mode: Disable`n" -ForegroundColor Green
+
+Set-WnfFeatureConfig -Store User -Mode Disable -Features $Feature | Out-Null
+Set-WnfFeatureConfig -Store Machine -Mode Disable -Features $Feature | Out-Null
+Query-WnfFeatureConfig -Store User| ? FeatureId -eq $Feature
+Query-WnfFeatureConfig -Store Machine | ? FeatureId -eq $Feature
+
+Write-Host "Mode: Default`n" -ForegroundColor Green
+
+Set-WnfFeatureConfig -Store User -Mode Default -Features $Feature | Out-Null
+Set-WnfFeatureConfig -Store Machine -Mode Default -Features $Feature | Out-Null
+Query-WnfFeatureConfig -Store User| ? FeatureId -eq $Feature
+Query-WnfFeatureConfig -Store Machine | ? FeatureId -eq $Feature
 ```
 
 ### 3. Examples
