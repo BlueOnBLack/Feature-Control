@@ -6,8 +6,7 @@ Based on the ViVeTool source code and borrowing some libraries from the System I
 
 
 
-**Support Both WNF & RTL Libaries
-**
+**Support Both WNF & RTL Libaries**
 
 ## ⚠️ Warning and Disclaimer
 
