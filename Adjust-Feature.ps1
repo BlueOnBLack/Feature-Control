@@ -457,15 +457,15 @@ function Adjust-Feature {
         $update.FeatureId           = $FeatureId
         $update.Priority            = $Priority
         $update.EnabledState        = $EnabledState
-        $update.PackedOptions       = 0x0
-        $update.EnabledStateOptions = $EnabledStateOptions
+        $update.PackedOptions       = $VariantPayloadKind
+        $update.EnabledStateOptions = [byte]$EnabledStateOptions
         $update.VariantFlags        = $VariantFlags
-        $update.VariantPayload      = $VariantPayload
+        $update.VariantPayload      = [uint32]$VariantPayload
         $update.Operation           = $Operation
 
         [marshal]::StructureToPtr(
             $update,
-            ([IntPtr]::Add($UpdatePackage, ($BaseOffset + ($blockSize * $Index)))), 
+            ([IntPtr]::Add($UpdatePackage, ($BaseOffset + (0x20 * $Index)))), 
             $true
         )
     }
@@ -508,9 +508,8 @@ function Adjust-Feature {
             Count      = ( $Shift + 0x0C )
         }
 
-        $blockSize = 0x20
         $Count = $FeatureIds.Count
-        $PayloadSize = (($blockSize * $Count)+ 7) -band -bnot 7
+        $PayloadSize = ((0x20 * $Count)+ 7) -band -bnot 7
         $updatePackage = [marshal]::AllocHGlobal($Offset.BaseSize + $PayloadSize)
         (0..((($Offset.BaseSize + $PayloadSize)/0x08)-1)) | % {
             [Marshal]::WriteInt64($updatePackage, ($_*0x08), 0L)
