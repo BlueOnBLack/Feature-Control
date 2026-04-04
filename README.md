@@ -5,6 +5,10 @@ This script provides a PowerShell function, `Adjust-Feature`, to enable, disable
 Based on the ViVeTool source code and borrowing some libraries from the System Informer project (see Git page).
 
 
+
+Support Both WNF & RTL Libaries
+
+
 ## ⚠️ Warning and Disclaimer
 
 This script uses **undocumented Windows Native APIs** (`NtSetSystemInformation`, `RtlSetFeatureConfigurations`, etc.) and directly manipulates the operating system's internal feature management configuration, including registry overrides.
@@ -101,6 +105,7 @@ Set-WnfFeatureConfig -Store User -Mode Default -Features $Feature | Out-Null
 Set-WnfFeatureConfig -Store Machine -Mode Default -Features $Feature | Out-Null
 Query-WnfFeatureConfig -Store User| ? FeatureId -eq $Feature
 Query-WnfFeatureConfig -Store Machine | ? FeatureId -eq $Feature
+return
 ```
 
 ### 3. Examples
