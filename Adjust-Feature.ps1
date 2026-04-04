@@ -2,202 +2,17 @@ using namespace System
 using namespace System.IO
 using namespace System.Reflection
 using namespace System.Reflection.Emit
-using namespace System.Runtime.InteropServices
 using namespace System.Management.Automation
+using namespace System.Runtime.InteropServices
 
 Clear-Host
 Write-Host
 
-<#
-Based on ViveTool Source code.
-namespace --> Albacore.ViVeTool
-           
-@ Mach2
-@ https://github.com/riverar/mach2
+# Fcon = Feature Configuration library (lives in System32)
+# WNF = Windows Notification Facility
+# RTL = Run-Time Library functions inside ntdll
 
-@ ViVe \ ViVeTool GUI
-@ https://github.com/thebookisclosed/ViVe
-@ https://github.com/PeterStrick/ViVeTool-GUI
-
-@ phnt Headers [private]
-@ https://github.com/winsiderss/systeminformer
-@ https://github.com/winsiderss/systeminformer/blob/master/phnt/include/ntrtl.h
-
-@ Consumer_ESU_Enrollment.ps1
-@ https://github.com/abbodi1406/ConsumerESU/blob/master/Consumer_ESU_Enrollment.ps1
-
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-* RTL_FEATURE_CONFIGURATION_UPDATE - NtDoc
-* https://ntdoc.m417z.com/rtl_feature_configuration_update
-
-// Ntoskrnl.exe
-// __int64 __fastcall RtlpFcUpdateFeatureConfiguration(_DWORD *a1, __int64 a2, char *a3, size_t a4, void *a5, size_t *a6)
-// v18 += 32;
-// qsort(a3, a4, 0x20ui64, RtlpFcCompareUpdates);
-
-// ntdll.dll
-// __int64 __fastcall RtlSetFeatureConfigurations(_QWORD *a1, int a2, const void *a3, unsigned __int64 a4)
-// v8 = 32i64 * (unsigned int)a4;
-
-// ntoskrnl.exe, Function RtlpFcUpdateFeature
-// __int64 __fastcall RtlpFcUpdateFeature(__int64 a1, __int64 a2)
-{
-    int v2; // eax
-    int v5; // ecx
-    int v6; // edx
-    __int64 result; // rax
-
-    v2 = *(_DWORD *)(a2 + 28);
-    if ( (v2 & 1) != 0 )
-    {
-    *(_DWORD *)(a1 + 4) ^= (*(_DWORD *)(a1 + 4) ^ (16 * *(_DWORD *)(a2 + 8))) & 0x30;
-    v2 = *(_DWORD *)(a2 + 28);
-    }
-    if ( (v2 & 2) != 0 )
-    {
-    *(_DWORD *)(a1 + 4) ^= (*(_DWORD *)(a1 + 4) ^ (*(unsigned __int8 *)(a2 + 16) << 8)) & 0x3F00;
-    v5 = *(_DWORD *)(a1 + 4);
-    *(_DWORD *)(a1 + 8) = *(_DWORD *)(a2 + 24);
-    v6 = v5 ^ ((unsigned __int16)v5 ^ (unsigned __int16)((unsigned __int16)*(_DWORD *)(a2 + 20) << 14)) & 0xC000;
-    *(_DWORD *)(a1 + 4) = v6;
-    }
-    else
-    {
-    v6 = *(_DWORD *)(a1 + 4);
-    }
-    result = v6 ^ ((unsigned __int8)v6 ^ (unsigned __int8)((unsigned __int8)*(_DWORD *)(a2 + 12) << 6)) & 0x40u;
-    *(_DWORD *)(a1 + 4) = result;
-    return result;
-}
-
-typedef enum _RTL_FEATURE_CONFIGURATION_PRIORITY
-{
-} RTL_FEATURE_CONFIGURATION_PRIORITY, * PRTL_FEATURE_CONFIGURATION_PRIORITY;
-typedef enum _RTL_FEATURE_ENABLED_STATE
-{
-} RTL_FEATURE_ENABLED_STATE;
-typedef enum _RTL_FEATURE_VARIANT_PAYLOAD_KIND
-{
-} RTL_FEATURE_VARIANT_PAYLOAD_KIND, * PRTL_FEATURE_VARIANT_PAYLOAD_KIND;
-typedef enum _RTL_FEATURE_CONFIGURATION_OPERATION
-{
-} RTL_FEATURE_CONFIGURATION_OPERATION, * PRTL_FEATURE_CONFIGURATION_OPERATION;
-
-typedef struct _RTL_FEATURE_CONFIGURATION_UPDATE
-{
-    /* 0x00 */ ULONG FeatureId;
-    /* 0x04 */ RTL_FEATURE_CONFIGURATION_PRIORITY Priority;
-    /* 0x08 */ RTL_FEATURE_ENABLED_STATE EnabledState;
-
-    /* 0x0C */ ULONG PackedOptions;       // Read at a2 + 12
-
-    /* 0x10 */ UCHAR EnabledStateOptions; // Read at a2 + 16 (The byte access)
-    /* 0x11 */ UCHAR Reserved[3];         // Padding to reach next 4-byte boundary
-
-    /* 0x14 */ union {
-        ULONG Flags;
-        struct {
-            ULONG Variant : 6;
-            ULONG ChangeTimeUpgrade : 1;
-            ULONG HasGroupBypass : 1;
-            ULONG Reserved : 24;
-        } FeatureFlags;
-    } FeatureConfig; // Read at a2 + 20
-
-    /* 0x18 */ ULONG VariantPayload;      // Read at a2 + 24
-
-    /* 0x1C */ RTL_FEATURE_CONFIGURATION_OPERATION Operation; // Read at a2 + 28
-
-} RTL_FEATURE_CONFIGURATION_UPDATE;
-
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    
-* _RTL_FEATURE_CONFIGURATION
-* https://ntdoc.m417z.com/rtl_feature_configuration
-* https://www.vergiliusproject.com/kernels/x64/windows-10/21h1/_RTL_FEATURE_CONFIGURATION
-
--- Same version, just compact one, 
--- instead of 32 bytes, just 12 bytes
-
-[DllImport("ntdll.dll")]
-public static extern int RtlQueryFeatureConfiguration(
-    uint featureId,
-    RTL_FEATURE_CONFIGURATION_TYPE featureConfigurationType,
-    ref ulong changeStamp,
-    out RTL_FEATURE_CONFIGURATION featureConfiguration
-);
-
-// Ntoskrnl.exe, IDA, Local Types
-00000000 _RTL_FEATURE_CONFIGURATION struc ; (sizeof=0xC, align=0x4)
-00000000 FeatureId       dd ?        ; 0x0, 4 bytes ? Feature identifier
-00000004 Option          dw ?        ; 0x4, 2 bytes ? packed bitfield of options
-00000006 padding         dw ?        ; 0x6, 2 bytes ? alignment padding
-00000008 VariantPayload  dd ?        ; 0x8, 4 bytes ? payload value
-0000000C _RTL_FEATURE_CONFIGURATION ends
-
-//0xc bytes (sizeof)
-struct _RTL_FEATURE_CONFIGURATION
-{
-    ULONG FeatureId;                                                        //0x0
-    ULONG Priority:4;                                                       //0x4
-    ULONG EnabledState:2;                                                   //0x4
-    ULONG IsWexpConfiguration:1;                                            //0x4
-    ULONG HasSubscriptions:1;                                               //0x4
-    ULONG Variant:6;                                                        //0x4
-    ULONG VariantPayloadKind:2;                                             //0x4
-    ULONG VariantPayload;                                                   //0x8
-};
-
-// ntoskrnl.exe
-// __int64 __fastcall wil_details_StagingConfig_QueryFeatureState(__int64 a1, __int64 a2, int a3, int a4)
-{
-    *(_DWORD *)(v9 + 12) = v7;
-    *(_DWORD *)(v9 + 8) = v23 >> 30;
-    *(_BYTE *)(v9 + 4) = HIBYTE(v23) & 0x3F;
-    *(_DWORD *)(v9 + 20) = (v23 >> 1) & 1;
-    v24 = (v23 >> 12) & 3;
-    if ( v24 || (v24 = (v23 >> 10) & 3) != 0 )
-    {
-    *(_DWORD *)v9 = v24;
-    }
-    else
-    {
-    v25 = (v23 >> 8) & 3;
-    if ( v25 )
-        *(_DWORD *)v9 = v25;
-    }
-    v14 = 1;
-}
-
-// EditionUpgradeManagerObj.dll
-// __int64 __fastcall wil_QueryFeatureState(__int64 a1, unsigned int a2, int a3, int a4, _DWORD *a5, _DWORD *a6)
-{
-    ....
-    v14 = HIDWORD(v18);
-    v10 = 1;
-    v15 = HIDWORD(v18);
-    *(_DWORD *)(a1 + 12) = v19;
-    *(_DWORD *)(a1 + 8) = (unsigned __int16)v15 >> 14;
-    *(_DWORD *)a1 = (v15 >> 4) & 3;
-    *(_BYTE *)(a1 + 4) = BYTE1(v14) & 0x3F;
-    *(_DWORD *)(a1 + 16) = (v14 >> 7) & 1;
-    *(_DWORD *)(a1 + 20) = (v14 >> 6) & 1;
-}
-
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-* _RTL_FEATURE_ENABLED_STATE_OPTIONS
-* https://www.vergiliusproject.com/kernels/x64/windows-11/24h2/_RTL_FEATURE_ENABLED_STATE_OPTIONS
-
-//0x4 bytes (sizeof)
-enum _RTL_FEATURE_ENABLED_STATE_OPTIONS
-{
-    FeatureEnabledStateOptionsNone = 0,
-    FeatureEnabledStateOptionsWexpConfig = 1
-}; 
-#>
-
+#region "Misc"
 Function Bor {
     param ([int[]] $Array) 
     $ret = $Array[0]
@@ -205,32 +20,6 @@ Function Bor {
         $ret = $ret -bor $item
     }
     return [Int32]$ret
-}
-function New-Module {
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '')]
-    [CmdletBinding()]
-    Param (
-        [Parameter(Position = 0)]
-        [ValidateNotNullOrEmpty()]
-        [String]
-        $ModuleName = [Guid]::NewGuid().ToString()
-    )
-
-    $AppDomain = [Reflection.Assembly].Assembly.GetType('System.AppDomain').GetProperty('CurrentDomain').GetValue($null, @())
-    $LoadedAssemblies = $AppDomain.GetAssemblies()
-
-    foreach ($Assembly in $LoadedAssemblies) {
-        if ($Assembly.FullName -and ($Assembly.FullName.Split(',')[0] -eq $ModuleName)) {
-            return $Assembly
-        }
-    }
-
-    $DynAssembly = New-Object Reflection.AssemblyName($ModuleName)
-    $Domain = $AppDomain
-    $AssemblyBuilder = $Domain.DefineDynamicAssembly($DynAssembly, 'Run')
-    $ModuleBuilder = $AssemblyBuilder.DefineDynamicModule($ModuleName, $False)
-
-    return $ModuleBuilder
 }
 function New-field {
     Param (
@@ -376,7 +165,414 @@ function New-Struct {
 
     $StructBuilder.CreateType()
 }
-function Adjust-Feature {
+function New-InMemoryModule {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '')]
+    [CmdletBinding()]
+    Param (
+        [Parameter(Position = 0)]
+        [ValidateNotNullOrEmpty()]
+        [String]
+        $ModuleName = [Guid]::NewGuid().ToString()
+    )
+
+    $AppDomain = [Reflection.Assembly].Assembly.GetType('System.AppDomain').GetProperty('CurrentDomain').GetValue($null, @())
+    $LoadedAssemblies = $AppDomain.GetAssemblies()
+
+    foreach ($Assembly in $LoadedAssemblies) {
+        if ($Assembly.FullName -and ($Assembly.FullName.Split(',')[0] -eq $ModuleName)) {
+            return $Assembly
+        }
+    }
+
+    $DynAssembly = New-Object Reflection.AssemblyName($ModuleName)
+    $Domain = $AppDomain
+    $AssemblyBuilder = $Domain.DefineDynamicAssembly($DynAssembly, 'Run')
+    $ModuleBuilder = $AssemblyBuilder.DefineDynamicModule($ModuleName, $False)
+
+    return $ModuleBuilder
+}
+function Register-NativeMethods {
+    param (
+        [Parameter(Mandatory)]
+        [Array]$FunctionList,
+
+        # Global defaults
+        $NativeCallConv      = [CallingConvention]::Winapi,
+        $NativeCharSet       = [CharSet]::Unicode,
+        $ImplAttributes      = [MethodImplAttributes]::PreserveSig,
+        $TypeAttributes      = [TypeAttributes]::Public -bor [TypeAttributes]::Abstract -bor [TypeAttributes]::Sealed,
+        $Attributes          = [MethodAttributes]::Public -bor [MethodAttributes]::Static -bor [MethodAttributes]::PinvokeImpl,
+        $CallingConventions  = [CallingConventions]::Standard
+    )
+
+    # Dynamic assembly + module
+    $asmName = New-Object System.Reflection.AssemblyName "DynamicDllHelperAssembly"
+    $asm     = [AppDomain]::CurrentDomain.DefineDynamicAssembly($asmName, [AssemblyBuilderAccess]::Run)
+    $mod     = $asm.DefineDynamicModule("DynamicDllHelperModule")
+    $tb      = $mod.DefineType("NativeMethods", $TypeAttributes)
+
+    foreach ($func in $FunctionList) {
+        # Per-function overrides
+        $funcCharSet = if ($func.ContainsKey("CharSet")) { 
+            [System.Runtime.InteropServices.CharSet]::$($func.CharSet) 
+        } else { 
+            $NativeCharSet 
+        }
+
+        $funcCallConv = if ($func.ContainsKey("CallConv")) { 
+            $func.CallConv 
+        } else { 
+            $NativeCallConv 
+        }
+
+        $tb.DefinePInvokeMethod(
+            $func.Name,
+            $func.Dll,
+            $Attributes,
+            $CallingConventions,
+            $func.ReturnType,
+            $func.Parameters,
+            $funcCallConv,
+            $funcCharSet
+        ).SetImplementationFlags($ImplAttributes)
+    }
+
+    return $tb.CreateType()
+}
+#endregion
+
+#region "Feature, RTL"
+# Demo
+<#
+Clear-Host
+Write-Host
+
+$Feature = 58755790
+$Features = @(57517687, 58755790, 59064570)
+
+Write-Host 'Mode: Enable' -ForegroundColor Green -NoNewline
+
+Set-FeatureConfiguration -FeatureIds $Feature -Action Enable -Mode User | Out-Null
+Set-FeatureConfiguration -FeatureIds $Feature -Action Enable -Mode Policy | Out-Null
+Query-FeatureConfiguration -Feature $Feature # -OutList | ? FeatureId -eq $Feature
+
+Write-Host "Mode: Disable`n" -ForegroundColor Green
+
+Set-FeatureConfiguration -FeatureIds $Feature -Action Disable -Mode User | Out-Null
+Set-FeatureConfiguration -FeatureIds $Feature -Action Disable -Mode Policy | Out-Null
+Query-FeatureConfiguration -Feature $Feature # -OutList | ? FeatureId -eq $Feature
+
+Write-Host "Mode: Reset`n" -ForegroundColor Green
+
+Set-FeatureConfiguration -FeatureIds $Feature -Action Reset -Mode User | Out-Null
+Set-FeatureConfiguration -FeatureIds $Feature -Action Reset -Mode Policy | Out-Null
+Query-FeatureConfiguration -Feature $Feature # -OutList | ? FeatureId -eq $Feature
+
+return
+#>
+#Info
+<#
+Based on ViveTool Source code.
+namespace --> Albacore.ViVeTool
+           
+@ Mach2
+@ https://github.com/riverar/mach2
+
+@ ViVe \ ViVeTool GUI
+@ https://github.com/thebookisclosed/ViVe
+@ https://github.com/PeterStrick/ViVeTool-GUI
+
+@ phnt Headers [private]
+@ https://github.com/winsiderss/systeminformer
+@ https://github.com/winsiderss/systeminformer/blob/master/phnt/include/ntrtl.h
+
+@ Consumer_ESU_Enrollment.ps1
+@ https://github.com/abbodi1406/ConsumerESU/blob/master/Consumer_ESU_Enrollment.ps1
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* RTL_FEATURE_CONFIGURATION_UPDATE - NtDoc
+* https://ntdoc.m417z.com/rtl_feature_configuration_update
+
+// Ntoskrnl.exe
+// __int64 __fastcall RtlpFcUpdateFeatureConfiguration(_DWORD *a1, __int64 a2, char *a3, size_t a4, void *a5, size_t *a6)
+// v18 += 32;
+// qsort(a3, a4, 0x20ui64, RtlpFcCompareUpdates);
+
+// ntdll.dll
+// __int64 __fastcall RtlSetFeatureConfigurations(_QWORD *a1, int a2, const void *a3, unsigned __int64 a4)
+// v8 = 32i64 * (unsigned int)a4;
+
+// ntoskrnl.exe, Function RtlpFcUpdateFeature
+// __int64 __fastcall RtlpFcUpdateFeature(__int64 a1, __int64 a2)
+{
+    int v2; // eax
+    int v5; // ecx
+    int v6; // edx
+    __int64 result; // rax
+
+    v2 = *(_DWORD *)(a2 + 28);
+    if ( (v2 & 1) != 0 )
+    {
+    *(_DWORD *)(a1 + 4) ^= (*(_DWORD *)(a1 + 4) ^ (16 * *(_DWORD *)(a2 + 8))) & 0x30;
+    v2 = *(_DWORD *)(a2 + 28);
+    }
+    if ( (v2 & 2) != 0 )
+    {
+    *(_DWORD *)(a1 + 4) ^= (*(_DWORD *)(a1 + 4) ^ (*(unsigned __int8 *)(a2 + 16) << 8)) & 0x3F00;
+    v5 = *(_DWORD *)(a1 + 4);
+    *(_DWORD *)(a1 + 8) = *(_DWORD *)(a2 + 24);
+    v6 = v5 ^ ((unsigned __int16)v5 ^ (unsigned __int16)((unsigned __int16)*(_DWORD *)(a2 + 20) << 14)) & 0xC000;
+    *(_DWORD *)(a1 + 4) = v6;
+    }
+    else
+    {
+    v6 = *(_DWORD *)(a1 + 4);
+    }
+    result = v6 ^ ((unsigned __int8)v6 ^ (unsigned __int8)((unsigned __int8)*(_DWORD *)(a2 + 12) << 6)) & 0x40u;
+    *(_DWORD *)(a1 + 4) = result;
+    return result;
+}
+
+typedef enum _RTL_FEATURE_CONFIGURATION_PRIORITY
+{
+} RTL_FEATURE_CONFIGURATION_PRIORITY, * PRTL_FEATURE_CONFIGURATION_PRIORITY;
+typedef enum _RTL_FEATURE_ENABLED_STATE
+{
+} RTL_FEATURE_ENABLED_STATE;
+typedef enum _RTL_FEATURE_VARIANT_PAYLOAD_KIND
+{
+} RTL_FEATURE_VARIANT_PAYLOAD_KIND, * PRTL_FEATURE_VARIANT_PAYLOAD_KIND;
+typedef enum _RTL_FEATURE_CONFIGURATION_OPERATION
+{
+} RTL_FEATURE_CONFIGURATION_OPERATION, * PRTL_FEATURE_CONFIGURATION_OPERATION;
+
+typedef struct _RTL_FEATURE_CONFIGURATION_UPDATE
+{
+    /* 0x00 */ ULONG FeatureId;
+    /* 0x04 */ RTL_FEATURE_CONFIGURATION_PRIORITY Priority;
+    /* 0x08 */ RTL_FEATURE_ENABLED_STATE EnabledState;
+
+    /* 0x0C */ ULONG PackedOptions;       // Read at a2 + 12
+
+    /* 0x10 */ UCHAR EnabledStateOptions; // Read at a2 + 16 (The byte access)
+    /* 0x11 */ UCHAR Reserved[3];         // Padding to reach next 4-byte boundary
+
+    /* 0x14 */ union {
+        ULONG Flags;
+        struct {
+            ULONG Variant : 6;
+            ULONG ChangeTimeUpgrade : 1;
+            ULONG HasGroupBypass : 1;
+            ULONG Reserved : 24;
+        } FeatureFlags;
+    } FeatureConfig; // Read at a2 + 20
+
+    /* 0x18 */ ULONG VariantPayload;      // Read at a2 + 24
+
+    /* 0x1C */ RTL_FEATURE_CONFIGURATION_OPERATION Operation; // Read at a2 + 28
+
+} RTL_FEATURE_CONFIGURATION_UPDATE;
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    
+* _RTL_FEATURE_CONFIGURATION
+* https://ntdoc.m417z.com/rtl_feature_configuration
+* https://www.vergiliusproject.com/kernels/x64/windows-10/21h1/_RTL_FEATURE_CONFIGURATION
+
+-- Same version, just compact one, 
+-- instead of 32 bytes, just 12 bytes
+
+[DllImport("ntdll.dll")]
+public static extern int RtlQueryFeatureConfiguration(
+    uint featureId,
+    RTL_FEATURE_CONFIGURATION_TYPE featureConfigurationType,
+    ref ulong changeStamp,
+    out RTL_FEATURE_CONFIGURATION featureConfiguration
+);
+
+// Ntoskrnl.exe, IDA, Local Types
+00000000 _RTL_FEATURE_CONFIGURATION struc ; (sizeof=0xC, align=0x4)
+00000000 FeatureId       dd ?        ; 0x0, 4 bytes — Feature identifier
+00000004 Option          dw ?        ; 0x4, 2 bytes — packed bitfield of options
+00000006 padding         dw ?        ; 0x6, 2 bytes — alignment padding
+00000008 VariantPayload  dd ?        ; 0x8, 4 bytes — payload value
+0000000C _RTL_FEATURE_CONFIGURATION ends
+
+//0xc bytes (sizeof)
+struct _RTL_FEATURE_CONFIGURATION
+{
+    ULONG FeatureId;                                                        //0x0
+    ULONG Priority:4;                                                       //0x4
+    ULONG EnabledState:2;                                                   //0x4
+    ULONG IsWexpConfiguration:1;                                            //0x4
+    ULONG HasSubscriptions:1;                                               //0x4
+    ULONG Variant:6;                                                        //0x4
+    ULONG VariantPayloadKind:2;                                             //0x4
+    ULONG VariantPayload;                                                   //0x8
+};
+
+// ntoskrnl.exe
+// __int64 __fastcall wil_details_StagingConfig_QueryFeatureState(__int64 a1, __int64 a2, int a3, int a4)
+{
+    *(_DWORD *)(v9 + 12) = v7;
+    *(_DWORD *)(v9 + 8) = v23 >> 30;
+    *(_BYTE *)(v9 + 4) = HIBYTE(v23) & 0x3F;
+    *(_DWORD *)(v9 + 20) = (v23 >> 1) & 1;
+    v24 = (v23 >> 12) & 3;
+    if ( v24 || (v24 = (v23 >> 10) & 3) != 0 )
+    {
+    *(_DWORD *)v9 = v24;
+    }
+    else
+    {
+    v25 = (v23 >> 8) & 3;
+    if ( v25 )
+        *(_DWORD *)v9 = v25;
+    }
+    v14 = 1;
+}
+
+// EditionUpgradeManagerObj.dll
+// __int64 __fastcall wil_QueryFeatureState(__int64 a1, unsigned int a2, int a3, int a4, _DWORD *a5, _DWORD *a6)
+{
+    ....
+    v14 = HIDWORD(v18);
+    v10 = 1;
+    v15 = HIDWORD(v18);
+    *(_DWORD *)(a1 + 12) = v19;
+    *(_DWORD *)(a1 + 8) = (unsigned __int16)v15 >> 14;
+    *(_DWORD *)a1 = (v15 >> 4) & 3;
+    *(_BYTE *)(a1 + 4) = BYTE1(v14) & 0x3F;
+    *(_DWORD *)(a1 + 16) = (v14 >> 7) & 1;
+    *(_DWORD *)(a1 + 20) = (v14 >> 6) & 1;
+}
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* _RTL_FEATURE_ENABLED_STATE_OPTIONS
+* https://www.vergiliusproject.com/kernels/x64/windows-11/24h2/_RTL_FEATURE_ENABLED_STATE_OPTIONS
+
+//0x4 bytes (sizeof)
+enum _RTL_FEATURE_ENABLED_STATE_OPTIONS
+{
+    FeatureEnabledStateOptionsNone = 0,
+    FeatureEnabledStateOptionsWexpConfig = 1
+}; 
+#>
+Function Init-RTL {
+    
+    # Define the RTL feature update struct
+    if (-not ([PSTypeName]'RTL_FEATURE_CONFIGURATION_UPDATE').Type) {
+        New-Struct `
+            -Module (New-InMemoryModule -ModuleName RTL_FEATURE_CONFIGURATION_UPDATE) `
+            -FullName RTL_FEATURE_CONFIGURATION_UPDATE `
+            -StructFields @{
+                FeatureId           = New-field 0  UInt32   # 0x00
+                Priority            = New-field 1  Int32    # 0x04
+                EnabledState        = New-field 2  Int32    # 0x08
+                PackedOptions       = New-field 3  Int32    # 0x0C (The mask 0x40 source)
+                EnabledStateOptions = New-field 4  Byte     # 0x10 (The byte read at a2+16)
+                reserved1           = New-field 5  byte     # 0x10 ++
+                reserved2           = New-field 6  byte     # 0x10 ++
+                reserved3           = New-field 7  byte     # 0x10 ++
+                VariantFlags        = New-field 8  Int32    # 0x14 (The bits at a2+20)
+                VariantPayload      = New-field 9 UInt32    # 0x18 (The value at a2+24)
+                Operation           = New-field 10 Int32    # 0x1C (The v2 check at a2+28)
+            } | Out-Null
+    }
+
+    # Define a simple struct for holding parsed RTL feature data.
+    # This struct is used only for storing feature entries in an array/list.
+    # Each instance represents one feature with its states, text description, and payload
+    if (-not ([PSTypeName]'RTL_FEATURE_INFO').Type) {
+        New-Struct `
+            -Module (New-InMemoryModule -ModuleName RTL_FEATURE_INFO) `
+            -FullName RTL_FEATURE_INFO `
+            -StructFields @{
+                FeatureId           = New-field 0  UInt32
+                FlagsRaw            = New-field 1  String
+                Priority            = New-field 2  UInt32
+                EnabledState        = New-field 3  String
+                IsWexpConfiguration = New-field 4  Boolean
+                HasSubscriptions    = New-field 5  Boolean
+                Variant             = New-field 6  UInt32
+                VariantPayloadKind  = New-field 7  UInt32
+                VariantPayload      = New-field 8  String
+                Reserved            = New-field 9  UInt32
+                EnabledStateOptions = New-field 10 UInt32
+            } | Out-Null
+    }
+
+    try {
+        $Module = [AppDomain]::CurrentDomain.GetAssemblies()| ? { $_.ManifestModule.ScopeName -eq "RTL" } | select -Last 1
+        $Global:RTL = $Module.GetTypes()[0]
+    }
+    catch {
+        $Module = [AppDomain]::CurrentDomain.DefineDynamicAssembly("null", 1).DefineDynamicModule("RTL", $False).DefineType("null")
+        @(
+            @('null', 'null', [int], @()), # place holder
+            @('NtSetSystemInformation',       'ntdll.dll', [Int32], @([Int32], [IntPtr], [Int32])),
+            @('RtlGetSystemBootStatus',       'ntdll.dll', [Int32], @([Int], [Int32].MakeByRefType(), [Int], [IntPtr])),
+            @('RtlSetSystemBootStatus',       'ntdll.dll', [Int32], @([Int], [Int32].MakeByRefType(), [Int], [IntPtr])),
+            @('RtlSetFeatureConfigurations',  'ntdll.dll', [Int32], @([Int].MakeByRefType(), [Int32], [IntPtr], [Int])),
+            @('RtlCreateBootStatusDataFile',  'ntdll.dll', [Int32], @([IntPtr])),
+            @('RtlQueryFeatureConfiguration', 'ntdll.dll', [Int32], @([UInt32], [UInt32], [UInt64].MakeByRefType(), [IntPtr])),
+            @('RtlQueryFeatureConfigurationChangeStamp', 'ntdll.dll', [Int32], @()),
+            @('RtlQueryAllFeatureConfigurations', 'ntdll.dll', [Int32], @([Int32], [UInt64].MakeByRefType(), [IntPtr], [Int32].MakeByRefType()))
+        ) | % {
+            $Module.DefinePInvokeMethod(($_[0]), ($_[1]), 22, 1, [Type]($_[2]), [Type[]]($_[3]), 1, 3).SetImplementationFlags(128) # Def` 128, fail-safe 0
+        }
+        $Global:RTL = $Module.CreateType()
+    }
+}
+function Write-FeatureData {
+    param(
+        [int]     $Index,
+        [int]     $BaseOffset,
+        [IntPtr]  $UpdatePackage,
+        [int]     $FeatureId = 0x0,
+        [int]     $Priority = 0x0,
+        [int]     $EnabledState = 0x0,
+        [int]     $EnabledStateOptions = 0x0,
+        [int]     $VariantFlags = 0x0,
+        [int]     $VariantPayloadKind = 0x0,
+        [int]     $VariantPayload = 0x0,
+        [int]     $Operation = 0x0
+    )
+
+    [RTL_FEATURE_CONFIGURATION_UPDATE]$update = [Activator]::CreateInstance([RTL_FEATURE_CONFIGURATION_UPDATE])
+    $update.FeatureId           = $FeatureId
+    $update.Priority            = $Priority
+    $update.EnabledState        = $EnabledState
+    $update.PackedOptions       = $VariantPayloadKind
+    $update.EnabledStateOptions = [byte]$EnabledStateOptions
+    $update.VariantFlags        = $VariantFlags
+    $update.VariantPayload      = [uint32]$VariantPayload
+    $update.Operation           = $Operation
+
+    [marshal]::StructureToPtr(
+        $update,
+        ([IntPtr]::Add($UpdatePackage, ($BaseOffset + (0x20 * $Index)))), 
+        $true
+    )
+}
+function Obfuscate-FeatureId {
+    param(
+        [uint32]$featureId
+    )
+
+    [uint32]$x = [uint32]($featureId -bxor 0x74161A4E)
+    $x = [uint32]((($x -shr 16) -bor ($x -shl 16)) -band 0xFFFFFFFF)
+    $x = [uint32]((($x -band 0xFF00FF00) -shr 8) -bor (($x -band 0x00FF00FF) -shl 8))
+    $x = [uint32]($x -band 0xFFFFFFFF)
+    [uint32]$intermediate = [uint32]($x -bxor 0x8FB23D4F)
+    [uint32]$rot = [uint32]( (($intermediate -shl 1) -band 0xFFFFFFFF) -bor (($intermediate -shr 31) -band 0x1) )
+    $rot = [uint32]($rot -band 0xFFFFFFFF)
+    [uint32]$result = [uint32]($rot -bxor 0x833EA8FF)
+    return $result
+}
+function Set-FeatureConfiguration {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
@@ -394,6 +590,11 @@ function Adjust-Feature {
         [switch]$SysCall,
         [switch]$Log
     )
+
+    if (!$Global:RTL) {
+        Init-RTL
+    }
+
     $results = $False
     $BootPending = 0x01
     $ConfigurationState = 0x11
@@ -404,90 +605,6 @@ function Adjust-Feature {
     if (!([Security.Principal.WindowsIdentity]::GetCurrent().Groups.Value -contains "S-1-5-32-544")) {
         Write-Error "User doesn't belong to Administrator's group"
         return
-    }
-
-    if (-not ([PSTypeName]'RTL_FEATURE_CONFIGURATION_UPDATE').Type) {
-        New-Struct `
-            -Module (New-Module -ModuleName RTL_FEATURE_CONFIGURATION_UPDATE) `
-            -FullName RTL_FEATURE_CONFIGURATION_UPDATE `
-            -StructFields @{
-                FeatureId           = New-field 0  UInt32   # 0x00
-                Priority            = New-field 1  Int32    # 0x04
-                EnabledState        = New-field 2  Int32    # 0x08
-                PackedOptions       = New-field 3  Int32    # 0x0C (The mask 0x40 source)
-                EnabledStateOptions = New-field 4  Byte     # 0x10 (The byte read at a2+16)
-                reserved1           = New-field 5  byte     # 0x10 ++
-                reserved2           = New-field 6  byte     # 0x10 ++
-                reserved3           = New-field 7  byte     # 0x10 ++
-                VariantFlags        = New-field 8  Int32    # 0x14 (The bits at a2+20)
-                VariantPayload      = New-field 9 UInt32    # 0x18 (The value at a2+24)
-                Operation           = New-field 10 Int32    # 0x1C (The v2 check at a2+28)
-            } | Out-Null
-    }
-    function Obfuscate-FeatureId {
-        param(
-            [uint32]$featureId
-        )
-        [uint32]$x = [uint32]($featureId -bxor 0x74161A4E)
-        $x = [uint32]((($x -shr 16) -bor ($x -shl 16)) -band 0xFFFFFFFF)
-        $x = [uint32]((($x -band 0xFF00FF00) -shr 8) -bor (($x -band 0x00FF00FF) -shl 8))
-        $x = [uint32]($x -band 0xFFFFFFFF)
-        [uint32]$intermediate = [uint32]($x -bxor 0x8FB23D4F)
-        [uint32]$rot = [uint32]( (($intermediate -shl 1) -band 0xFFFFFFFF) -bor (($intermediate -shr 31) -band 0x1) )
-        $rot = [uint32]($rot -band 0xFFFFFFFF)
-        [uint32]$result = [uint32]($rot -bxor 0x833EA8FF)
-        return $result
-    }
-    function Write-FeatureData {
-        param(
-            [int]     $Index,
-            [int]     $BaseOffset,
-            [IntPtr]  $UpdatePackage,
-            [int]     $FeatureId = 0x0,
-            [int]     $Priority = 0x0,
-            [int]     $EnabledState = 0x0,
-            [int]     $EnabledStateOptions = 0x0,
-            [int]     $VariantFlags = 0x0,
-            [int]     $VariantPayloadKind = 0x0,
-            [int]     $VariantPayload = 0x0,
-            [int]     $Operation = 0x0
-        )
-
-        [RTL_FEATURE_CONFIGURATION_UPDATE]$update = [Activator]::CreateInstance([RTL_FEATURE_CONFIGURATION_UPDATE])
-        $update.FeatureId           = $FeatureId
-        $update.Priority            = $Priority
-        $update.EnabledState        = $EnabledState
-        $update.PackedOptions       = $VariantPayloadKind
-        $update.EnabledStateOptions = [byte]$EnabledStateOptions
-        $update.VariantFlags        = $VariantFlags
-        $update.VariantPayload      = [uint32]$VariantPayload
-        $update.Operation           = $Operation
-
-        [marshal]::StructureToPtr(
-            $update,
-            ([IntPtr]::Add($UpdatePackage, ($BaseOffset + (0x20 * $Index)))), 
-            $true
-        )
-    }
-    try {
-        $Module = [AppDomain]::CurrentDomain.GetAssemblies()| ? { $_.ManifestModule.ScopeName -eq "RTL" } | select -Last 1
-        $RTL = $Module.GetTypes()[0]
-    }
-    catch {
-        $Module = [AppDomain]::CurrentDomain.DefineDynamicAssembly("null", 1).DefineDynamicModule("RTL", $False).DefineType("null")
-        @(
-            @('null', 'null', [int], @()), # place holder
-            @('NtSetSystemInformation',       'ntdll.dll', [Int32], @([Int32], [IntPtr], [Int32])),
-            @('RtlGetSystemBootStatus',       'ntdll.dll', [Int32], @([Int], [Int32].MakeByRefType(), [Int], [IntPtr])),
-            @('RtlSetSystemBootStatus',       'ntdll.dll', [Int32], @([Int], [Int32].MakeByRefType(), [Int], [IntPtr])),
-            @('RtlSetFeatureConfigurations',  'ntdll.dll', [Int32], @([Int].MakeByRefType(), [Int32], [IntPtr], [Int])),
-            @('RtlCreateBootStatusDataFile',  'ntdll.dll', [Int32], @([IntPtr])),
-            @('RtlQueryFeatureConfiguration', 'ntdll.dll', [Int32], @([UInt32], [UInt32], [UInt64].MakeByRefType(), [IntPtr])),
-            @('RtlQueryFeatureConfigurationChangeStamp', 'ntdll.dll', [Int32], @())
-        ) | % {
-            $Module.DefinePInvokeMethod(($_[0]), ($_[1]), 22, 1, [Type]($_[2]), [Type[]]($_[3]), 1, 3).SetImplementationFlags(128) # Def` 128, fail-safe 0
-        }
-        $RTL = $Module.CreateType()
     }
 
     try {
@@ -524,47 +641,10 @@ function Adjust-Feature {
         foreach ($Feature in $FeatureIds) {
             $ConfigObj = $null
             if ($Action -eq "Reset") {
-                $changeStamp = 0L
-                [IntPtr]$ConfigPtr = [Marshal]::AllocHGlobal(0x0C)
-                $hr = $RTL::RtlQueryFeatureConfiguration(
-                        [Int32]$Feature,
-                        0x01,
-                        ([ref]$changeStamp),
-                        $ConfigPtr
-                    )
-                try {
-                    if ($hr -eq 0) {
-                        $bytes = New-Object byte[] 12
-                        [Marshal]::Copy($ConfigPtr, $bytes, 0, 12)
-                        $featureId       = [BitConverter]::ToUInt32($bytes, 0x00)
-                        $flags           = [BitConverter]::ToUInt32($bytes, 0x04)
-                        $variantPayload  = [BitConverter]::ToUInt32($bytes, 0x08)
-                        $ConfigObj = [PSCustomObject]@{
-                            FeatureId            = $featureId
-                            FlagsRaw             = ('0x{0:X8}' -f $flags)
-                            Priority             = $flags -band 0xF
-                            EnabledState         = ($flags -shr 4) -band 0x3
-                            IsWexpConfiguration  = [bool](($flags -shr 6) -band 0x1)
-                            HasSubscriptions     = [bool](($flags -shr 7) -band 0x1)
-                            Variant              = (($flags -shr 8) -band 0x3F)
-                            VariantPayloadKind   = (($flags -shr 14) -band 0x3)
-                            VariantPayload       = ('0x{0:X8}' -f $variantPayload)
-                            Reserved             = (($flags -shr 16) -band 0xFFFF)
-                            Operation            = 0x04
-                            EnabledStateOptions  = if ([bool](($flags -shr 6) -band 0x1)) {
-                                                        0x01  # IsWexpConfiguration ? TRUE  -> [FeatureEnabledStateOptionsWexpConfig, 1]
-                                                    } else {
-                                                        0x00  # IsWexpConfiguration ? FALSE -> [FeatureEnabledStateOptionsNone, 0]
-                                                    }
-                        }
-
-                        # for later, Registry Clean, Cause Problem
-                        # if value is 0x0a instead 0x08 ... well
-                        $Priority = $ConfigObj.Priority
-                    }
-                }
-                finally {
-                    [marshal]::FreeHGlobal($ConfigPtr)
+                $FeatureObj = $null
+                $FeatureObj = Query-FeatureConfiguration -Feature $Feature
+                if($FeatureObj) {
+                    $Priority = $FeatureObj.Priority
                 }
             }
             if ($ConfigObj) {
@@ -725,24 +805,446 @@ function Adjust-Feature {
     }
     return $false
 }
+Function Get-FeatureObjectFromPtr {
+    param([IntPtr]$Pointer)
+    
+    $fId   = [Marshal]::ReadInt32($Pointer, 0)
+    $flags = [Marshal]::ReadInt32($Pointer, 4)
+    $vPay  = [Marshal]::ReadInt32($Pointer, 8)
+    
+    $StateLookup = @{
+        0 = 'Default'
+        1 = 'Disable'
+        2 = 'Enable'
+    }
+    $rawEnabledState = ($flags -shr 4) -band 0x3
+    $Info = [Activator]::CreateInstance([RTL_FEATURE_INFO])
 
-Adjust-Feature `
-    -FeatureIds @(57517687, 58755790, 59064570) `
-    -Action Enable `
-    -Mode User `
-    -Log
+    $rawState = ($flags -shr 4) -band 0x3
+    $EnabledState = if ($StateLookup.ContainsKey($rawState)) { $StateLookup[$rawState] } else { "N/A" }
+
+    $Info.FeatureId           = [uint32]$fId
+    $Info.FlagsRaw            = '0x{0:X8}' -f $flags
+    $Info.Priority            = $flags -band 0xF
+    $Info.EnabledState        = $EnabledState
+    $Info.IsWexpConfiguration = [bool](($flags -shr 6) -band 0x1)
+    $Info.HasSubscriptions    = [bool](($flags -shr 7) -band 0x1)
+    $Info.Variant             = ($flags -shr 8) -band 0x3F
+    $Info.VariantPayloadKind  = ($flags -shr 14) -band 0x3
+    $Info.VariantPayload      = '0x{0:X8}' -f [uint32]$vPay
+    $Info.Reserved            = ($flags -shr 16) -band 0xFFFF
+    $Info.EnabledStateOptions = if (($flags -shr 6) -band 0x1) { 0x01 } else { 0x00 }
+
+    return $Info
+}
+Function Query-FeatureConfiguration {
+    [CmdletBinding(DefaultParameterSetName = 'Single')]
+    param (
+      [Parameter(Mandatory = $true, Position = 0, ParameterSetName = 'Single')]
+      [Int32]$Feature,
+
+      [Parameter(ParameterSetName = 'List')]
+      [switch]$OutList,
+
+      [Parameter(Position = 1)]
+      [ValidateSet(1, 2)]
+      [Int32]$Type = 1 # 1 = Runtime (Active), 2 = Boot (Persistent)
+    )
+    
+    if (!$Global:RTL) {
+        Init-RTL
+    }
+
+    $ConfigPtr = [IntPtr]::Zero
+    [UInt64]$changeStamp = 0
+    [Int32]$configCount = 0
+
+    try {
+        if ($OutList.IsPresent) {
+            
+            # List of Feature Query
+            $hr = $RTL::RtlQueryAllFeatureConfigurations($ConfigurationType, [ref]$changeStamp, [IntPtr]::Zero, [ref]$configCount)
+            if ($configCount -le 0) { 
+                return $null
+            }
+
+            $bufferSize = 12 * $configCount
+            $ConfigPtr = [System.Runtime.InteropServices.Marshal]::AllocHGlobal($bufferSize)
+            $hr = $RTL::RtlQueryAllFeatureConfigurations($ConfigurationType, [ref]$changeStamp, $ConfigPtr, [ref]$configCount)
+            if ($hr -ne 0) { return $null }
+
+            $results = for ($i = 0; $i -lt $configCount; $i++) {
+                $offset = $i * 12
+                Get-FeatureObjectFromPtr -Pointer ([IntPtr]::Add($ConfigPtr, $offset))
+            }
+            return $results
+
+        } else {
+            
+            # Single Feature Query
+            $ConfigPtr = [Marshal]::AllocHGlobal(0x0C)
+            $hr = $RTL::RtlQueryFeatureConfiguration($Feature, $Type, [ref]$changeStamp, $ConfigPtr)
+            
+            if ($hr -eq 0) {
+                return Get-FeatureObjectFromPtr -Pointer $ConfigPtr
+            }
+            return $null
+        }
+    }
+    finally {
+        if ($ConfigPtr -ne [IntPtr]::Zero) {
+            [Marshal]::FreeHGlobal($ConfigPtr)
+        }
+    }
+}
+#endregion
+
+#region "Feature, WNF"
+# Demo
+<#
+Clear-Host
 Write-Host
 
-Adjust-Feature `
-    -FeatureIds @(57517687, 58755790, 59064570) `
-    -Action Disable `
-    -Mode User `
-    -Log
-Write-Host
+$Feature = 58755790
+$Features = @(57517687, 58755790, 59064570)
 
-Adjust-Feature `
-    -FeatureIds @(57517687, 58755790, 59064570) `
-    -Action Reset `
-    -Mode User `
-    -Log
-Write-Host
+Write-Host 'Mode: Enable' -ForegroundColor Green -NoNewline
+
+Set-WnfFeatureConfig -Store User -Mode Enable -Features $Feature | Out-Null
+Set-WnfFeatureConfig -Store Machine -Mode Enable -Features $Feature | Out-Null
+Query-WnfFeatureConfig -Store User| ? FeatureId -eq $Feature
+Query-WnfFeatureConfig -Store Machine | ? FeatureId -eq $Feature
+
+Write-Host "Mode: Disable`n" -ForegroundColor Green
+
+Set-WnfFeatureConfig -Store User -Mode Disable -Features $Feature | Out-Null
+Set-WnfFeatureConfig -Store Machine -Mode Disable -Features $Feature | Out-Null
+Query-WnfFeatureConfig -Store User| ? FeatureId -eq $Feature
+Query-WnfFeatureConfig -Store Machine | ? FeatureId -eq $Feature
+
+Write-Host "Mode: Default`n" -ForegroundColor Green
+
+Set-WnfFeatureConfig -Store User -Mode Default -Features $Feature | Out-Null
+Set-WnfFeatureConfig -Store Machine -Mode Default -Features $Feature | Out-Null
+Query-WnfFeatureConfig -Store User| ? FeatureId -eq $Feature
+Query-WnfFeatureConfig -Store Machine | ? FeatureId -eq $Feature
+#>
+#Info
+<#
+Based on mach2
+https://github.com/riverar/mach2
+
+NTSTATUS
+NTAPI
+NtQueryWnfStateData(
+    [In]      PCWNF_STATE_NAME  StateName,
+    [In_opt]  PCWNF_TYPE_ID     TypeId,
+    [In_opt]  const VOID*       ExplicitScope,
+    [Out]     PWNF_CHANGE_STAMP ChangeStamp,
+    [Out_opt] PVOID             Buffer,
+    [In_out]  PULONG            BufferSize
+);
+
+EditionUpgradeManagerObj.dll
+__int64 __fastcall wil_details_NtQueryWnfStateData
+__int64 __fastcall wil_details_StagingConfig_Load(__int64 a1, int a2, __int64 a3, __int64 a4)
+
+ntoskrnl.exe
+__int64 __fastcall wil_details_StagingConfig_Load(__int64 a1, int a2, __int64 a3, __int64 a4)
+__int64 __fastcall NtQueryWnfStateData(__int64 a1, __int64 a2, __int64 a3, _DWORD *a4, volatile void *Address,_DWORD *a6)
+__int64 __fastcall ExpCaptureWnfStateName(__int64 *a1, unsigned __int64 *a2, char a3)
+
+Visiting Vibranium Velocity
+A look at new changes to everyone’s favorite A/B system
+https://medium.com/@thebookisclosed/visiting-vibranium-velocity-f1ae76253c67
+
+Enter build 18963
+Among the features this build introduces are these two: FconWritesToWNF and FconWritesToRTL. Here’s a quick rundown of the terminology used in these names.
+
+* Fcon = Feature Configuration library (lives in System32)
+* WNF = Windows Notification Facility
+* RTL = Run-Time Library functions inside ntdll
+
+Until this build, 
+there were no centralized functions in the OS which would let developers explicitly work with features.
+Programs had to work with a specific WNF state (basically a data blob) which was used for configuring features, 
+the contents of which can be queried or written to.
+
+Starting with build 18963, 
+ntdll now sports a set of exports designed precisely for feature work. Those being:
+RtlNotifyFeatureUsage
+RtlQueryAllFeatureConfigurations
+RtlQueryFeatureConfiguration
+RtlQueryFeatureConfigurationChangeStamp
+RtlQueryFeatureUsageNotificationSubscriptions
+RtlRegisterFeatureConfigurationChangeNotification
+RtlSetFeatureConfigurations
+RtlSubscribeForFeatureUsageNotification
+RtlUnregisterFeatureConfigurationChangeNotification
+RtlUnsubscribeFromFeatureUsageNotifications
+#>
+function Init-WNF {
+    
+    # Define the WNF feature entry struct
+    if (-not ([PSTypeName]'WNF_FEATURE_ENTRY').Type) {
+        New-Struct `
+            -Module (New-InMemoryModule -ModuleName WNF_FEATURE_ENTRY) `
+            -FullName WNF_FEATURE_ENTRY `
+            -StructFields @{
+                FeatureId   = New-field 0 UInt32   # offset 0x00
+                PackedBits  = New-field 1 UInt32   # offset 0x04
+                Payload     = New-field 2 UInt32   # offset 0x08
+            } | Out-Null
+    }
+
+    # Define the WNF update header struct
+    if (-not ([PSTypeName]'WNF_FEATURE_UPDATE').Type) {
+        New-Struct `
+            -Module (New-InMemoryModule -ModuleName WNF_FEATURE_UPDATE) `
+            -FullName WNF_FEATURE_UPDATE `
+            -StructFields @{
+                Version                   = New-field 0 Byte      # 0x00
+                VersionMinor              = New-field 1 Byte      # 0x01
+                HeaderSizeBytes           = New-field 2 UInt16    # 0x02
+                FeatureCount              = New-field 3 UInt16    # 0x04
+                FeatureUsageTriggerCount  = New-field 4 UInt16    # 0x06
+                SessionProperties         = New-field 5 UInt32    # 0x08
+                Properties                = New-field 6 UInt32    # 0x0C
+                # Note: The array of WNF_FEATURE_ENTRY structs follows immediately after this header
+            } | Out-Null
+    }
+
+    # Define a simple struct for holding parsed WNF feature data.
+    # This struct is used only for storing feature entries in an array/list.
+    # Each instance represents one feature with its states, text description, and payload
+    if (-not ([PSTypeName]'WNF_FEATURE_INFO').Type) {
+    New-Struct `
+        -Module (New-InMemoryModule -ModuleName WNF_FEATURE_INFO) `
+        -FullName WNF_FEATURE_INFO `
+        -StructFields @{
+            FeatureId    = New-field 0 UInt32
+            ServiceState = New-field 1 UInt32
+            UserState    = New-field 2 UInt32
+            TestState    = New-field 3 UInt32
+            StateText    = New-field 4 String
+            Payload      = New-field 5 UInt32
+        } | Out-Null
+}
+
+    $functions = @(
+        @{
+            Name       = "NtQueryWnfStateData";
+            Dll        = "ntdll.dll";
+            ReturnType = [Int32]; # NTSTATUS
+            Parameters = [Type[]]@(
+                [UInt64].MakeByRefType(), # WNF State Name
+                [Int64],                  # TypeId (optional)
+                [Int64],                  # Explicit Scope
+                [UInt32].MakeByRefType(), # ChangeStamp
+                [IntPtr],                 # Buffer
+                [UInt32].MakeByRefType()  # BufferSize
+            )
+        },
+        @{
+            Name       = "NtUpdateWnfStateData";
+            Dll        = "ntdll.dll";
+            ReturnType = [Int32]; # NTSTATUS
+            Parameters = [Type[]]@(
+                [UInt64].MakeByRefType(), # WNF State Name
+                [IntPtr],                 # Buffer
+                [UInt32],                 # Length
+                [UInt32].MakeByRefType(), # TypeId
+                [UInt64],                 # Nothing
+                [UInt32],                 # ChangeStamp
+                [UInt32]                  # Optional
+            )
+        }
+    )
+    $Global:wnf = Register-NativeMethods $functions
+}
+function Parse-WnfData {
+    param (
+        [Parameter(Mandatory)]
+        [IntPtr]$Buffer,
+
+        [Parameter(Mandatory)]
+        [UInt32]$BufferSize,
+
+        [Parameter(Mandatory)]
+        [UInt32]$ChangeStamp
+    )
+
+    # Read Header Information
+    $Version      = [Marshal]::ReadByte($Buffer,  0)
+    $HeaderSize   = [Marshal]::ReadInt16($Buffer, 2)
+    $FeatureCount = [Marshal]::ReadInt16($Buffer, 4)
+    $VariantCount = [Marshal]::ReadInt16($Buffer, 6)
+
+    if ($Version -ne 2) {
+        Write-Warning "Unexpected WNF Version ($Version). Parsing may be inaccurate."
+    }
+
+    # Prepare strongly typed result list
+    $FeatureObjects = [System.Collections.Generic.List[WNF_FEATURE_INFO]]::new()
+
+    # Each Feature Entry is 12 bytes
+    $FeatureListOffset = $HeaderSize
+    for ($i = 0; $i -lt $FeatureCount; $i++) {
+        $CurrentOffset = $FeatureListOffset + ($i * 12)
+        if (($CurrentOffset + 12) -gt $BufferSize) { break }
+
+        $FeatureId = [Marshal]::ReadInt32($Buffer, $CurrentOffset)
+        $bits      = [Marshal]::ReadInt32($Buffer, $CurrentOffset + 4)
+        $Payload   = [Marshal]::ReadInt32($Buffer, $CurrentOffset + 8)
+
+        # Decode service/user/test state from bits
+        $ServiceState = ($bits -shr 8) -band 0x3
+        $UserState    = ($bits -shr 12) -band 0x3
+        $TestState    = ($bits -shr 14) -band 0x3
+
+        $StateText = switch ($ServiceState) {
+            0 { "Default" }
+            1 { "Disabled" }
+            2 { "Enabled" }
+            Default { "Unknown ($ServiceState)" }
+        }
+
+        # Create strongly typed struct
+        $featureObj = [WNF_FEATURE_INFO]::new()
+        $featureObj.FeatureId    = $FeatureId
+        $featureObj.ServiceState = $ServiceState
+        $featureObj.UserState    = $UserState
+        $featureObj.TestState    = $TestState
+        $featureObj.StateText    = $StateText
+        $featureObj.Payload      = $Payload
+
+        $FeatureObjects.Add($featureObj)
+    }
+
+    return $FeatureObjects
+}
+function Set-WnfFeatureConfig {
+    param (
+        [Parameter(Mandatory)]
+        [ValidateSet("User","Machine")]
+        [string]$Store,
+
+        [Parameter(Mandatory)]
+        [ValidateSet("Enable","Disable","Default")]
+        [string]$Mode,
+
+        [Parameter(Mandatory)]
+        [uint32[]]$Features
+    )
+    if (!$Global:wnf) {
+      Init-WNF
+    }
+
+    # Map mode to numeric ServiceState
+    $modeMap = @{
+        "Default" = 0
+        "Disable" = 1
+        "Enable"  = 2
+    }
+    $StateValue = $modeMap[$Mode]
+
+    # WNF Store ID
+    $WnfStore = switch ($Store) {
+        "User"    { 0x418A073AA3BC88F5L }
+        "Machine" { 0x418A073AA3BC7C75L }
+    }
+
+    # Query existing WNF change stamp
+    $ChangeStamp = [UInt32]0
+    $BufferSize = [UInt32]0
+    $hr = $Global:wnf::NtQueryWnfStateData([ref]$WnfStore, 0L, 0L, [ref]$ChangeStamp, 0L, [ref]$BufferSize)
+
+    $Count = $Features.Count
+    $BufferSize = 16 + (12 * $Count)
+    $Buffer = [Marshal]::AllocHGlobal($BufferSize)
+
+    try {
+        $update = [Activator]::CreateInstance([Type]'WNF_FEATURE_UPDATE')
+        $update.Version = 2
+        $update.VersionMinor = 2
+        $update.HeaderSizeBytes = 16
+        $update.FeatureCount = $Count
+        $update.FeatureUsageTriggerCount = 0
+        $update.SessionProperties = 0
+        $update.Properties = 0
+        [marshal]::StructureToPtr(
+            $update, $Buffer, $true
+        )
+
+        for ($i=0; $i -lt $Count; $i++) {
+            $featureEntry = [Activator]::CreateInstance([Type]'WNF_FEATURE_ENTRY')
+            $featureEntry.FeatureId = [UInt32]$Features[$i]
+            $featureEntry.PackedBits = [UInt32]($StateValue -shl 8) # ServiceState at bits 8-9
+            $featureEntry.Payload = 0
+            [Marshal]::StructureToPtr(
+                $featureEntry, 
+                ([IntPtr]::Add($Buffer, 16 + ($i * 12))), 
+                $true
+            )
+        }
+
+        # Update WNF
+        $hr = $Global:wnf::NtUpdateWnfStateData(
+                [ref]$WnfStore,
+                $Buffer,
+                [UInt32]$BufferSize,
+                [ref]$ChangeStamp,
+                0L,
+                $ChangeStamp,
+                0x1
+            )
+
+        return $hr
+    }
+    finally {
+        [Marshal]::FreeHGlobal($Buffer)
+    }
+}
+function Query-WnfFeatureConfig {
+    param(
+        [Parameter(Mandatory)]
+        [ValidateSet("User","Machine")]
+        [string]$Store
+    )
+
+    if (!$Global:wnf) {
+      Init-WNF
+    }
+
+    $WnfStore = switch ($Store) {
+        "User"    { 0x418A073AA3BC88F5L }
+        "Machine" { 0x418A073AA3BC7C75L }
+    }
+
+    $ChangeStamp = [UInt32]0
+    $BufferSize = [UInt32]0
+    $Buffer = [IntPtr]::Zero
+
+    try {
+        # Query size & stamp
+        $hr = $Global:wnf::NtQueryWnfStateData([ref]$WnfStore, 0L, 0L, [ref]$ChangeStamp, 0L, [ref]$BufferSize)
+
+        if ($hr -eq 0xC0000023 -and $BufferSize -gt 0) {
+            $Buffer = [Marshal]::AllocHGlobal($BufferSize)
+
+            # Query actual data
+            $hr = $Global:wnf::NtQueryWnfStateData([ref]$WnfStore, 0L, 0L, [ref]$ChangeStamp, $Buffer, [ref]$BufferSize)
+
+            if ($hr -eq 0) {
+                Parse-WnfData -Buffer $Buffer -BufferSize $BufferSize -ChangeStamp $ChangeStamp
+                return;
+            }
+        }
+    }
+    finally {
+        if ($Buffer -ne [IntPtr]::Zero) {
+            [Marshal]::FreeHGlobal($Buffer)
+        }
+    }
+}
+#endregion
