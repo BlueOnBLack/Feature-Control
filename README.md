@@ -104,6 +104,7 @@ Set-WnfFeatureConfig -Store User -Mode Default -Features $Feature | Out-Null
 Set-WnfFeatureConfig -Store Machine -Mode Default -Features $Feature | Out-Null
 Query-WnfFeatureConfig -Store User| ? FeatureId -eq $Feature
 Query-WnfFeatureConfig -Store Machine | ? FeatureId -eq $Feature
+
 return
 ```
 
