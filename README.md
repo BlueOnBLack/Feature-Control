@@ -58,47 +58,39 @@ Write-Host
 $Feature = 58755790
 $Features = @(57517687, 58755790, 59064570)
 
-Write-Host 'Mode: Enable' -ForegroundColor Green -NoNewline
+Write-Host 'RTL, Mode: Enable' -ForegroundColor Green -NoNewline
 
 Set-FeatureConfiguration -FeatureIds $Feature -Action Enable -Mode User | Out-Null
 Set-FeatureConfiguration -FeatureIds $Feature -Action Enable -Mode Policy | Out-Null
 Query-FeatureConfiguration -Feature  $Feature
 
-Write-Host "Mode: Disable`n" -ForegroundColor Green
+Write-Host "RTL, Mode: Disable`n" -ForegroundColor Green
 
 Set-FeatureConfiguration -FeatureIds $Feature -Action Disable -Mode User | Out-Null
 Set-FeatureConfiguration -FeatureIds $Feature -Action Disable -Mode Policy | Out-Null
 Query-FeatureConfiguration -Feature  $Feature
 
-Write-Host "Mode: Reset`n" -ForegroundColor Green
+Write-Host "RTL, Mode: Reset`n" -ForegroundColor Green
 
 Set-FeatureConfiguration -FeatureIds $Feature -Action Reset -Mode User | Out-Null
 Set-FeatureConfiguration -FeatureIds $Feature -Action Reset -Mode Policy | Out-Null
 Query-FeatureConfiguration -Feature  $Feature
 
-return
-
-Clear-Host
-Write-Host
-
-$Feature = 58755790
-$Features = @(57517687, 58755790, 59064570)
-
-Write-Host 'Mode: Enable' -ForegroundColor Green -NoNewline
+Write-Host 'WNF, Mode: Enable' -ForegroundColor Green
 
 Set-WnfFeatureConfig -Store User    -Mode Enable -Feature $Feature | Out-Null
 Set-WnfFeatureConfig -Store Machine -Mode Enable -Feature $Feature | Out-Null
 Query-WnfFeatureConfig -Store User    -Feature $Feature
 Query-WnfFeatureConfig -Store Machine -Feature $Feature
 
-Write-Host "Mode: Disable`n" -ForegroundColor Green
+Write-Host "WNF, Mode: Disable`n" -ForegroundColor Green
 
 Set-WnfFeatureConfig -Store User    -Mode Disable -Feature $Feature | Out-Null
 Set-WnfFeatureConfig -Store Machine -Mode Disable -Feature $Feature | Out-Null
 Query-WnfFeatureConfig -Store User    -Feature $Feature
 Query-WnfFeatureConfig -Store Machine -Feature $Feature
 
-Write-Host "Mode: Default`n" -ForegroundColor Green
+Write-Host "WNF, Mode: Default`n" -ForegroundColor Green
 
 Set-WnfFeatureConfig -Store User    -Mode Default -Feature $Feature | Out-Null
 Set-WnfFeatureConfig -Store Machine -Mode Default -Feature $Feature | Out-Null
