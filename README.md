@@ -77,6 +77,7 @@ Set-FeatureConfiguration -FeatureIds $Feature -Action Reset -Mode Policy | Out-N
 Query-FeatureConfiguration -Feature  $Feature
 
 Write-Host 'WNF, Mode: Enable' -ForegroundColor Green
+Write-Host
 
 Set-WnfFeatureConfig -Store User    -Mode Enable -Feature $Feature | Out-Null
 Set-WnfFeatureConfig -Store Machine -Mode Enable -Feature $Feature | Out-Null
