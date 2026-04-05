@@ -62,19 +62,19 @@ Write-Host 'Mode: Enable' -ForegroundColor Green -NoNewline
 
 Set-FeatureConfiguration -FeatureIds $Feature -Action Enable -Mode User | Out-Null
 Set-FeatureConfiguration -FeatureIds $Feature -Action Enable -Mode Policy | Out-Null
-Query-FeatureConfiguration -Feature $Feature # -OutList | ? FeatureId -eq $Feature
+Query-FeatureConfiguration -Feature  $Feature
 
 Write-Host "Mode: Disable`n" -ForegroundColor Green
 
 Set-FeatureConfiguration -FeatureIds $Feature -Action Disable -Mode User | Out-Null
 Set-FeatureConfiguration -FeatureIds $Feature -Action Disable -Mode Policy | Out-Null
-Query-FeatureConfiguration -Feature $Feature # -OutList | ? FeatureId -eq $Feature
+Query-FeatureConfiguration -Feature  $Feature
 
 Write-Host "Mode: Reset`n" -ForegroundColor Green
 
 Set-FeatureConfiguration -FeatureIds $Feature -Action Reset -Mode User | Out-Null
 Set-FeatureConfiguration -FeatureIds $Feature -Action Reset -Mode Policy | Out-Null
-Query-FeatureConfiguration -Feature $Feature # -OutList | ? FeatureId -eq $Feature
+Query-FeatureConfiguration -Feature  $Feature
 
 return
 
@@ -86,52 +86,26 @@ $Features = @(57517687, 58755790, 59064570)
 
 Write-Host 'Mode: Enable' -ForegroundColor Green -NoNewline
 
-Set-WnfFeatureConfig -Store User -Mode Enable -Features $Feature | Out-Null
-Set-WnfFeatureConfig -Store Machine -Mode Enable -Features $Feature | Out-Null
-Query-WnfFeatureConfig -Store User| ? FeatureId -eq $Feature
-Query-WnfFeatureConfig -Store Machine | ? FeatureId -eq $Feature
+Set-WnfFeatureConfig -Store User    -Mode Enable -Feature $Feature | Out-Null
+Set-WnfFeatureConfig -Store Machine -Mode Enable -Feature $Feature | Out-Null
+Query-WnfFeatureConfig -Store User    -Feature $Feature
+Query-WnfFeatureConfig -Store Machine -Feature $Feature
 
 Write-Host "Mode: Disable`n" -ForegroundColor Green
 
-Set-WnfFeatureConfig -Store User -Mode Disable -Features $Feature | Out-Null
-Set-WnfFeatureConfig -Store Machine -Mode Disable -Features $Feature | Out-Null
-Query-WnfFeatureConfig -Store User| ? FeatureId -eq $Feature
-Query-WnfFeatureConfig -Store Machine | ? FeatureId -eq $Feature
+Set-WnfFeatureConfig -Store User    -Mode Disable -Feature $Feature | Out-Null
+Set-WnfFeatureConfig -Store Machine -Mode Disable -Feature $Feature | Out-Null
+Query-WnfFeatureConfig -Store User    -Feature $Feature
+Query-WnfFeatureConfig -Store Machine -Feature $Feature
 
 Write-Host "Mode: Default`n" -ForegroundColor Green
 
-Set-WnfFeatureConfig -Store User -Mode Default -Features $Feature | Out-Null
-Set-WnfFeatureConfig -Store Machine -Mode Default -Features $Feature | Out-Null
-Query-WnfFeatureConfig -Store User| ? FeatureId -eq $Feature
-Query-WnfFeatureConfig -Store Machine | ? FeatureId -eq $Feature
+Set-WnfFeatureConfig -Store User    -Mode Default -Feature $Feature | Out-Null
+Set-WnfFeatureConfig -Store Machine -Mode Default -Feature $Feature | Out-Null
+Query-WnfFeatureConfig -Store User    -Feature $Feature
+Query-WnfFeatureConfig -Store Machine -Feature $Feature
 
 return
-```
-
-### 3. Examples
-
-**Example 1: Enable a Feature**
-
-```powershell
-Adjust-Feature -FeatureIds @(48796508) -State Enable
-```
-
-**Example 2: Disable Multiple Features**
-
-```powershell
-Adjust-Feature -FeatureIds @(12345678, 87654321) -State Disable
-```
-
-**Example 3: Reset a Feature to Default**
-
-```powershell
-Adjust-Feature -FeatureIds @(48796508) -State Reset
-```
-
-**Example 4: Enable Globally (Higher Priority)**
-
-```powershell
-Adjust-Feature -FeatureIds @(48796508) -State Enable -Global
 ```
 
 ## 📝 Technical Notes
