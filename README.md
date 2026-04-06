@@ -6,7 +6,7 @@ Based on the ViVeTool source code and borrowing some libraries from the System I
 
 
 
-**Support Both WNF & RTL Libaries, Also Supprt RTL Kernel Libary TableLookUP**
+**Support Both WNF & RTL Libaries, Also Supprt RTL Kernel Libary Table Look UP**
 
 ## ⚠️ Warning and Disclaimer
 
