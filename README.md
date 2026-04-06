@@ -6,7 +6,7 @@ Based on the ViVeTool source code and borrowing some libraries from the System I
 
 
 
-**Support Both WNF & RTL Libaries**
+**Support Both WNF & RTL Libaries, Also Supprt RTL Kernel Libary TableLookUP**
 
 ## ⚠️ Warning and Disclaimer
 
@@ -55,25 +55,31 @@ The function requires at least two mandatory parameters: the Feature ID(s) and t
 Clear-Host
 Write-Host
 
+Write-Host 'RTL Runtime Store' -ForegroundColor Green -NoNewline
+
 $Feature = 58755790
-$Features = @(57517687, 58755790, 59064570)
+$Feature = @(57517687, 58755790, 59064570)
 
-Write-Host 'RTL, Mode: Enable' -ForegroundColor Green -NoNewline
+Set-FeatureConfiguration -Feature $feature -Action Disable -Mode Policy | Out-Null
+Set-FeatureConfiguration -Feature $feature -Action Disable -Mode User   | Out-Null
+Query-KernelFeatureState -Feature $feature -Store Runtime
 
-Set-FeatureConfiguration -FeatureIds $Feature -Action Enable -Mode User | Out-Null
-Set-FeatureConfiguration -FeatureIds $Feature -Action Enable -Mode Policy | Out-Null
+Write-Host "RTL, Mode: Enable`n" -ForegroundColor Green
+
+Set-FeatureConfiguration -Feature $Feature -Action Enable -Mode User   | Out-Null
+Set-FeatureConfiguration -Feature $Feature -Action Enable -Mode Policy | Out-Null
 Query-FeatureConfiguration -Feature  $Feature
 
 Write-Host "RTL, Mode: Disable`n" -ForegroundColor Green
 
-Set-FeatureConfiguration -FeatureIds $Feature -Action Disable -Mode User | Out-Null
-Set-FeatureConfiguration -FeatureIds $Feature -Action Disable -Mode Policy | Out-Null
+Set-FeatureConfiguration -Feature $Feature -Action Disable -Mode User   | Out-Null
+Set-FeatureConfiguration -Feature $Feature -Action Disable -Mode Policy | Out-Null
 Query-FeatureConfiguration -Feature  $Feature
 
 Write-Host "RTL, Mode: Reset`n" -ForegroundColor Green
 
-Set-FeatureConfiguration -FeatureIds $Feature -Action Reset -Mode User | Out-Null
-Set-FeatureConfiguration -FeatureIds $Feature -Action Reset -Mode Policy | Out-Null
+Set-FeatureConfiguration -Feature $Feature -Action Reset -Mode User   | Out-Null
+Set-FeatureConfiguration -Feature $Feature -Action Reset -Mode Policy | Out-Null
 Query-FeatureConfiguration -Feature  $Feature
 
 Write-Host 'WNF, Mode: Enable' -ForegroundColor Green
