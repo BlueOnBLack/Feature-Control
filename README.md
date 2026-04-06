@@ -61,10 +61,10 @@ The script resolves the "Effective State" within the WNF blob following the OS p
 
 ### WNF Bitfield Alignment
 The script performs manual bit-shifting for the `WNF_FEATURE_ENTRY` structure:
-* **ServiceState:** Bits 8–9 ($bits \gg 8 \text{ \& } 0x3$)
-* **UserState:** Bits 10–11 ($bits \gg 10 \text{ \& } 0x3$)
-* **TestState:** Bits 12–13 ($bits \gg 12 \text{ \& } 0x3$)
-* **Kind:** Bits 30–31 ($bits \gg 30 \text{ \& } 0x3$)
+* **ServiceState:** Bits 8–9
+* **UserState:** Bits 10–11
+* **TestState:** Bits 12–13
+* **Kind:** Bits 30–31
 
 ---
 
