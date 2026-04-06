@@ -1505,41 +1505,41 @@ Query-KernelFeatureState -Feature $feature -Store Runtime
 
 Write-Host "RTL, Mode: Enable`n" -ForegroundColor Green
 
-Set-FeatureConfiguration -Feature $Feature -Action Enable -Mode User   | Out-Null
-Set-FeatureConfiguration -Feature $Feature -Action Enable -Mode Policy | Out-Null
-Query-FeatureConfiguration -Feature  $Feature
+Set-FeatureConfiguration   -Feature $Feature -Action Enable -Mode User   | Out-Null
+Set-FeatureConfiguration   -Feature $Feature -Action Enable -Mode Policy | Out-Null
+Query-FeatureConfiguration -Feature $Feature
 
 Write-Host "RTL, Mode: Disable`n" -ForegroundColor Green
 
-Set-FeatureConfiguration -Feature $Feature -Action Disable -Mode User   | Out-Null
-Set-FeatureConfiguration -Feature $Feature -Action Disable -Mode Policy | Out-Null
-Query-FeatureConfiguration -Feature  $Feature
+Set-FeatureConfiguration   -Feature $Feature -Action Disable -Mode User   | Out-Null
+Set-FeatureConfiguration   -Feature $Feature -Action Disable -Mode Policy | Out-Null
+Query-FeatureConfiguration -Feature $Feature
 
 Write-Host "RTL, Mode: Reset`n" -ForegroundColor Green
 
-Set-FeatureConfiguration -Feature $Feature -Action Reset -Mode User   | Out-Null
-Set-FeatureConfiguration -Feature $Feature -Action Reset -Mode Policy | Out-Null
-Query-FeatureConfiguration -Feature  $Feature
+Set-FeatureConfiguration   -Feature $Feature -Action Reset -Mode User   | Out-Null
+Set-FeatureConfiguration   -Feature $Feature -Action Reset -Mode Policy | Out-Null
+Query-FeatureConfiguration -Feature $Feature
 
 Write-Host 'WNF, Mode: Enable' -ForegroundColor Green
 Write-Host
 
-Set-WnfFeatureConfig -Store User    -Mode Enable -Feature $Feature | Out-Null
-Set-WnfFeatureConfig -Store Machine -Mode Enable -Feature $Feature | Out-Null
+Set-WnfFeatureConfig   -Store User    -Mode Enable -Feature $Feature | Out-Null
+Set-WnfFeatureConfig   -Store Machine -Mode Enable -Feature $Feature | Out-Null
 Query-WnfFeatureConfig -Store User    -Feature $Feature
 Query-WnfFeatureConfig -Store Machine -Feature $Feature
 
 Write-Host "WNF, Mode: Disable`n" -ForegroundColor Green
 
-Set-WnfFeatureConfig -Store User    -Mode Disable -Feature $Feature | Out-Null
-Set-WnfFeatureConfig -Store Machine -Mode Disable -Feature $Feature | Out-Null
+Set-WnfFeatureConfig   -Store User    -Mode Disable -Feature $Feature | Out-Null
+Set-WnfFeatureConfig   -Store Machine -Mode Disable -Feature $Feature | Out-Null
 Query-WnfFeatureConfig -Store User    -Feature $Feature
 Query-WnfFeatureConfig -Store Machine -Feature $Feature
 
 Write-Host "WNF, Mode: Default`n" -ForegroundColor Green
 
-Set-WnfFeatureConfig -Store User    -Mode Default -Feature $Feature | Out-Null
-Set-WnfFeatureConfig -Store Machine -Mode Default -Feature $Feature | Out-Null
+Set-WnfFeatureConfig   -Store User    -Mode Default -Feature $Feature | Out-Null
+Set-WnfFeatureConfig   -Store Machine -Mode Default -Feature $Feature | Out-Null
 Query-WnfFeatureConfig -Store User    -Feature $Feature
 Query-WnfFeatureConfig -Store Machine -Feature $Feature
 
