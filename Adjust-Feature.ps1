@@ -238,56 +238,6 @@ function Register-NativeMethods {
     return $tb.CreateType()
 }
 #endregion
-
-<#
-Clear-Host
-Write-Host
-
-$Feature = 58755790
-$Features = @(57517687, 58755790, 59064570)
-
-Write-Host 'RTL, Mode: Enable' -ForegroundColor Green -NoNewline
-
-Set-FeatureConfiguration -FeatureIds $Feature -Action Enable -Mode User | Out-Null
-Set-FeatureConfiguration -FeatureIds $Feature -Action Enable -Mode Policy | Out-Null
-Query-FeatureConfiguration -Feature  $Feature
-
-Write-Host "RTL, Mode: Disable`n" -ForegroundColor Green
-
-Set-FeatureConfiguration -FeatureIds $Feature -Action Disable -Mode User | Out-Null
-Set-FeatureConfiguration -FeatureIds $Feature -Action Disable -Mode Policy | Out-Null
-Query-FeatureConfiguration -Feature  $Feature
-
-Write-Host "RTL, Mode: Reset`n" -ForegroundColor Green
-
-Set-FeatureConfiguration -FeatureIds $Feature -Action Reset -Mode User | Out-Null
-Set-FeatureConfiguration -FeatureIds $Feature -Action Reset -Mode Policy | Out-Null
-Query-FeatureConfiguration -Feature  $Feature
-
-Write-Host 'WNF, Mode: Enable' -ForegroundColor Green
-Write-Host
-
-Set-WnfFeatureConfig -Store User    -Mode Enable -Feature $Feature | Out-Null
-Set-WnfFeatureConfig -Store Machine -Mode Enable -Feature $Feature | Out-Null
-Query-WnfFeatureConfig -Store User    -Feature $Feature
-Query-WnfFeatureConfig -Store Machine -Feature $Feature
-
-Write-Host "WNF, Mode: Disable`n" -ForegroundColor Green
-
-Set-WnfFeatureConfig -Store User    -Mode Disable -Feature $Feature | Out-Null
-Set-WnfFeatureConfig -Store Machine -Mode Disable -Feature $Feature | Out-Null
-Query-WnfFeatureConfig -Store User    -Feature $Feature
-Query-WnfFeatureConfig -Store Machine -Feature $Feature
-
-Write-Host "WNF, Mode: Default`n" -ForegroundColor Green
-
-Set-WnfFeatureConfig -Store User    -Mode Default -Feature $Feature | Out-Null
-Set-WnfFeatureConfig -Store Machine -Mode Default -Feature $Feature | Out-Null
-Query-WnfFeatureConfig -Store User    -Feature $Feature
-Query-WnfFeatureConfig -Store Machine -Feature $Feature
-
-return
-#>
 #region "Feature, RTL"
 #Info
 <#
@@ -412,10 +362,10 @@ public static extern int RtlQueryFeatureConfiguration(
 
 // Ntoskrnl.exe, IDA, Local Types
 00000000 _RTL_FEATURE_CONFIGURATION struc ; (sizeof=0xC, align=0x4)
-00000000 FeatureId       dd ?        ; 0x0, 4 bytes — Feature identifier
-00000004 Option          dw ?        ; 0x4, 2 bytes — packed bitfield of options
-00000006 padding         dw ?        ; 0x6, 2 bytes — alignment padding
-00000008 VariantPayload  dd ?        ; 0x8, 4 bytes — payload value
+00000000 FeatureId       dd ?        ; 0x0, 4 bytes â€” Feature identifier
+00000004 Option          dw ?        ; 0x4, 2 bytes â€” packed bitfield of options
+00000006 padding         dw ?        ; 0x6, 2 bytes â€” alignment padding
+00000008 VariantPayload  dd ?        ; 0x8, 4 bytes â€” payload value
 0000000C _RTL_FEATURE_CONFIGURATION ends
 
 //0xc bytes (sizeof)
@@ -501,6 +451,31 @@ Function Init-RTL {
             } | Out-Null
     }
 
+    if (-not ([PSTypeName]'KERNEL_FEATURE_TABLE').Type) {
+        New-Struct `
+            -Module (New-InMemoryModule -ModuleName KERNEL_FEATURE_TABLE) `
+            -FullName KERNEL_FEATURE_TABLE `
+            -StructFields @{
+                # --- Header Block (Row 1-2) ---
+                HeaderVersion   = New-field 0  UInt64   # 0x00
+                HeaderFlags     = New-field 1  UInt64   # 0x08
+
+                # --- Store 1 Block (Row 3-5) ---
+                Default_Handle   = New-field 2  UInt64   # 0x10 (40 09...)
+                Default_Size     = New-field 3  UInt64   # 0x18 (5C 1A...)
+                Default_Version  = New-field 4  UInt64   # 0x20 (01 00...)
+
+                # --- Store 2 Block (Row 6-8) ---
+                Runtime_Handle   = New-field 5  UInt64   # 0x28 (FC 0C...)
+                Runtime_Size     = New-field 6  UInt64   # 0x30 (5C 1A...)
+                Runtime_Version  = New-field 7  UInt64   # 0x38 (01 00...)
+
+                # --- Null/Sentinel Block (Row 9-10) ---
+                Sentinel_Low    = New-field 8  UInt64   # 0x40 (00 00...)
+                Sentinel_High   = New-field 9  UInt64   # 0x48 (00 00...)
+            } | Out-Null
+    }
+
     # Define a simple struct for holding parsed RTL feature data.
     # This struct is used only for storing feature entries in an array/list.
     # Each instance represents one feature with its states, text description, and payload
@@ -539,7 +514,10 @@ Function Init-RTL {
             @('RtlQueryFeatureConfiguration', 'ntdll.dll', [Int32], @([UInt32], [UInt32], [UInt64].MakeByRefType(), [IntPtr])),
             @('RtlQueryFeatureConfigurationChangeStamp', 'ntdll.dll', [Int32], @()),
             @('RtlQueryAllFeatureConfigurations', 'ntdll.dll', [Int32], @([Int32], [UInt64].MakeByRefType(), [IntPtr], [Int32].MakeByRefType())),
-            @('NtQuerySystemInformationEx', 'ntdll.dll', [Int32], @([Int32], [IntPtr], [Int32], [IntPtr], [Int32], [IntPtr]))
+            @('NtQuerySystemInformationEx', 'ntdll.dll', [Int32], @([Int32], [IntPtr], [Int32], [IntPtr], [Int32], [IntPtr])),
+            @('ZwMapViewOfSection',         'ntdll.dll', [Int32], @([IntPtr], [IntPtr], [IntPtr].MakeByRefType(), [UIntPtr], [UIntPtr], [Int64].MakeByRefType(), [IntPtr].MakeByRefType(), [Int32], [Int32], [Int32])),
+            @('ZwUnmapViewOfSection',       'ntdll.dll', [Int32], @([IntPtr], [IntPtr])),
+            @('NtClose',                    'ntdll.dll', [Int32], @([IntPtr]))
         ) | % {
             $Module.DefinePInvokeMethod(($_[0]), ($_[1]), 22, 1, [Type]($_[2]), [Type[]]($_[3]), 1, 3).SetImplementationFlags(128) # Def` 128, fail-safe 0
         }
@@ -596,7 +574,7 @@ function Set-FeatureConfiguration {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
-        [uint32[]]$FeatureIds,
+        [uint32[]]$Feature,
 
         [Parameter(Mandatory = $true)]
         [ValidateSet("Enable","Disable", "Reset")]
@@ -645,7 +623,7 @@ function Set-FeatureConfiguration {
             Count      = ( $Shift + 0x0C )
         }
 
-        $Count = $FeatureIds.Count
+        $Count = $Feature.Count
         $PayloadSize = ((0x20 * $Count)+ 7) -band -bnot 7
         $updatePackage = [marshal]::AllocHGlobal($Offset.BaseSize + $PayloadSize)
         (0..((($Offset.BaseSize + $PayloadSize)/0x08)-1)) | % {
@@ -658,11 +636,11 @@ function Set-FeatureConfiguration {
         [marshal]::WriteInt32($updatePackage, $Offset.Count, $Count)                   # Feature Id Total Count
 
         $idx = -1;
-        foreach ($Feature in $FeatureIds) {
+        foreach ($f in $Feature) {
             $ConfigObj = $null
             if ($Action -eq "Reset") {
                 $FeatureObj = $null
-                $FeatureObj = Query-FeatureConfiguration -Feature $Feature
+                $FeatureObj = Query-FeatureConfiguration -Feature $f
                 if($FeatureObj) {
                     $Priority = $FeatureObj.Priority
                 }
@@ -685,7 +663,7 @@ function Set-FeatureConfiguration {
                     -Index (++$idx) `
                     -BaseOffset $Offset.BaseSize `
                     -UpdatePackage $updatePackage `
-                    -FeatureId $Feature `
+                    -FeatureId $f `
                     -Priority $Priority `
                     -EnabledState $EnabledState `
                     -Operation $OperationType
@@ -742,7 +720,7 @@ function Set-FeatureConfiguration {
     }
 
     try {
-        foreach ($Feature in $FeatureIds) {
+        foreach ($f in $Feature) {
             $properties = @(
                 @{ Name = "EnabledState";          Value = [int]$EnabledState },
                 @{ Name = "EnabledStateOptions";   Value = 0 },
@@ -751,7 +729,7 @@ function Set-FeatureConfiguration {
                 @{ Name = "VariantPayloadKind";    Value = 0 }
             )
 
-            $ObfuscateId = Obfuscate-FeatureId $Feature
+            $ObfuscateId = Obfuscate-FeatureId $f
             
             # FeatureConfigurationPriorityUserPolicy  = 0Ah
             $PolicyPath = "HKLM:\SYSTEM\CurrentControlSet\Policies\Microsoft\FeatureManagement\Overrides"
@@ -904,7 +882,9 @@ Function Query-FeatureConfiguration {
         if ($OutList.IsPresent -or $Filter) {
             
             if ($SysCall.IsPresent) {
-                Write-Warning 'SysCall Parameter is ignored'
+                return (
+                    Query-KernelFeatureState -Feature $Feature
+                )
             }
             $hr = $RTL::RtlQueryAllFeatureConfigurations($ConfigurationType, [ref]$changeStamp, [IntPtr]::Zero, [ref]$configCount)
             if ($configCount -le 0) { 
@@ -994,6 +974,101 @@ Function Query-FeatureConfiguration {
         }
     }
 }
+function Query-KernelFeatureState {
+    param (
+        [ValidateSet("Default", "Runtime")]
+        [String]$Store = "Runtime",
+        [Int32[]]$Feature,
+        [switch]$Log
+    )
+
+    if (!$Global:RTL) {
+        Init-RTL
+    }
+
+    # ntdll.dll
+    # __int64 __fastcall RtlpFcUpdateLocalConfiguration(__int64 a1, unsigned __int64 a2, char a3)
+    # __int64 __fastcall RtlpFcQueryAllFeatureConfigurationsFromBufferSet(__int64 a1, unsigned int a2)
+    # __int64 __fastcall RtlpFcQueryAllFeatureConfigurationsFromBuffers(__int64 a1, void *a2, unsigned __int64 *a3)
+
+    # ntoskrnl.exe
+    # __int64 __fastcall CmQueryFeatureConfigurationSections
+    # __int64 __fastcall CmFcManagerQueryFeatureConfigurationSectionInformation(__int64 a1, _QWORD *a2, __int64 *a3, KPROCESSOR_MODE a4)
+    
+    $inSz, $outSz = 0x18, 0x50
+    $pIn  = [Marshal]::AllocHGlobal($inSz)
+    $pOut = [Marshal]::AllocHGlobal($outSz)
+    [IntPtr]$hSec = [IntPtr]$baseAddr = 0L
+    
+    for ($i = 0; $i -lt $outSz; $i += 8) { [Marshal]::WriteInt64($pOut, $i, 0) }
+    for ($i = 0; $i -lt $inSz;  $i += 8) { [Marshal]::WriteInt64($pIn,  $i, 0) }
+
+    try {
+        $status = $Global:RTL::NtQuerySystemInformationEx(211, $pIn, $inSz, $pOut, $outSz, 0L)
+        if ($status -ne 0) { throw "NtQuerySystemInformationEx failed: 0x$($status.ToString('X8'))" }
+
+        $table = [KERNEL_FEATURE_TABLE]$pOut
+        if ($Log.IsPresent) {
+          Write-Warning ("Default Size :: {0}" -f $table.Default_Size)
+          Write-Warning ("Runtime Size :: {0}" -f $table.Runtime_Size)
+        }
+
+        $hSec = switch ($Store) {
+            'Default' { [Int64]::Parse($table.Default_Handle) }
+            'Runtime' { [Int64]::Parse($table.Runtime_Handle) }
+            Default   { 0L }
+        }
+        if ($hSec -eq [IntPtr]::Zero) { return @() }
+
+        $viewSize = [IntPtr]::Zero
+        $status = $Global:RTL::ZwMapViewOfSection($hSec, [IntPtr](-1), [ref]$baseAddr, [UIntPtr]::Zero, [UIntPtr]::Zero, [ref]0, [ref]$viewSize, 0x2, 0x0, 0x2)
+        if ($status -ne 0) { throw "ZwMapViewOfSection failed: 0x$($status.ToString('X8'))" }
+
+        #$hCount = [Marshal]::ReadInt32($baseAddr, 0)
+        #$hSize  = 0x04 + ($hCount * 0x0C)
+
+        $hSize = switch ($Store) {
+            'Default' { [Int32]($table.Default_Size) }
+            'Runtime' { [Int32]($table.Runtime_Size) }
+        }
+
+        $buffer = [byte[]]::new($hSize)
+        [Marshal]::Copy($baseAddr, $buffer, 0, $hSize)
+        
+        $ms = [IO.MemoryStream]::new($buffer)
+        $br = [IO.BinaryReader]::new($ms)
+        $results = [List[RTL_FEATURE_INFO]]::new()
+
+        try {
+            $ms.Position = 0x04 # Skip count header
+            while ($ms.Position -lt $ms.Length) {
+                $entry = $br.ReadBytes(12)   
+                if ($Feature -and ([BitConverter]::ToInt32($entry, 0) -notin $Feature)) { continue }
+                $results.Add((Get-FeatureObjectFromPtr -Buffer $entry))
+                if ($Feature -and $results.Count -eq $Feature.Count) { break }
+            }
+        }
+        finally {
+            $br.Close();
+            $ms.Dispose()
+        }
+        return $results
+    }
+    catch {
+        Write-Error $_.Exception.Message
+    }
+    finally {
+        # CRITICAL: Clean up in reverse order of allocation
+        if ($baseAddr -ne [IntPtr]::Zero) {
+            $Global:RTL::ZwUnmapViewOfSection([IntPtr](-1), $baseAddr) | Out-Null
+        }
+        if ($hSec -ne [IntPtr]::Zero) {
+            $Global:RTL::NtClose($hSec) | Out-Null
+        }
+        [Marshal]::FreeHGlobal($pIn)
+        [Marshal]::FreeHGlobal($pOut)
+    }
+}
 #endregion
 #region "Feature, WNF"
 #Info
@@ -1024,11 +1099,11 @@ __int64 __fastcall wil_details_StagingConfig_Load(__int64 a1, int a2, __int64 a3
 __int64 __fastcall NtQueryWnfStateData(__int64 a1, __int64 a2, __int64 a3, _DWORD *a4, volatile void *Address,_DWORD *a6)
 
 Visiting Vibranium Velocity
-A look at new changes to everyone’s favorite A/B system
+A look at new changes to everyoneâ€™s favorite A/B system
 https://medium.com/@thebookisclosed/visiting-vibranium-velocity-f1ae76253c67
 
 Enter build 18963
-Among the features this build introduces are these two: FconWritesToWNF and FconWritesToRTL. Here’s a quick rundown of the terminology used in these names.
+Among the features this build introduces are these two: FconWritesToWNF and FconWritesToRTL. Hereâ€™s a quick rundown of the terminology used in these names.
 
 * Fcon = Feature Configuration library (lives in System32)
 * WNF = Windows Notification Facility
@@ -1415,3 +1490,57 @@ function Query-WnfFeatureConfig {
     }
 }
 #endregion
+
+Clear-Host
+Write-Host
+
+Write-Host 'RTL Runtime Store' -ForegroundColor Green -NoNewline
+
+$Feature = 58755790
+$Feature = @(57517687, 58755790, 59064570)
+
+Set-FeatureConfiguration -Feature $feature -Action Disable -Mode Policy | Out-Null
+Set-FeatureConfiguration -Feature $feature -Action Disable -Mode User   | Out-Null
+Query-KernelFeatureState -Feature $feature -Store Runtime
+
+Write-Host "RTL, Mode: Enable`n" -ForegroundColor Green
+
+Set-FeatureConfiguration -Feature $Feature -Action Enable -Mode User   | Out-Null
+Set-FeatureConfiguration -Feature $Feature -Action Enable -Mode Policy | Out-Null
+Query-FeatureConfiguration -Feature  $Feature
+
+Write-Host "RTL, Mode: Disable`n" -ForegroundColor Green
+
+Set-FeatureConfiguration -Feature $Feature -Action Disable -Mode User   | Out-Null
+Set-FeatureConfiguration -Feature $Feature -Action Disable -Mode Policy | Out-Null
+Query-FeatureConfiguration -Feature  $Feature
+
+Write-Host "RTL, Mode: Reset`n" -ForegroundColor Green
+
+Set-FeatureConfiguration -Feature $Feature -Action Reset -Mode User   | Out-Null
+Set-FeatureConfiguration -Feature $Feature -Action Reset -Mode Policy | Out-Null
+Query-FeatureConfiguration -Feature  $Feature
+
+Write-Host 'WNF, Mode: Enable' -ForegroundColor Green
+Write-Host
+
+Set-WnfFeatureConfig -Store User    -Mode Enable -Feature $Feature | Out-Null
+Set-WnfFeatureConfig -Store Machine -Mode Enable -Feature $Feature | Out-Null
+Query-WnfFeatureConfig -Store User    -Feature $Feature
+Query-WnfFeatureConfig -Store Machine -Feature $Feature
+
+Write-Host "WNF, Mode: Disable`n" -ForegroundColor Green
+
+Set-WnfFeatureConfig -Store User    -Mode Disable -Feature $Feature | Out-Null
+Set-WnfFeatureConfig -Store Machine -Mode Disable -Feature $Feature | Out-Null
+Query-WnfFeatureConfig -Store User    -Feature $Feature
+Query-WnfFeatureConfig -Store Machine -Feature $Feature
+
+Write-Host "WNF, Mode: Default`n" -ForegroundColor Green
+
+Set-WnfFeatureConfig -Store User    -Mode Default -Feature $Feature | Out-Null
+Set-WnfFeatureConfig -Store Machine -Mode Default -Feature $Feature | Out-Null
+Query-WnfFeatureConfig -Store User    -Feature $Feature
+Query-WnfFeatureConfig -Store Machine -Feature $Feature
+
+return
