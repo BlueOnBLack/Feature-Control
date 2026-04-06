@@ -1,122 +1,70 @@
-# Adjust-Feature PowerShell Script  
-This script provides a PowerShell function, `Adjust-Feature`, to enable, disable, or reset hidden Windows features using undocumented Native API calls — similar to tools like ViVeTool and Mach2.  
+# Windows Notification Facility (WNF) & Feature Configuration (Velocity)
 
+This documentation and script set provides a low-level interface for interacting with the Windows Notification Facility (WNF). It is specifically designed to manage Feature Configurations (the "Velocity" A/B testing and feature flagging system) used in Windows 10 and Windows 11.
 
-Based on the ViVeTool source code and borrowing some libraries from the System Informer project (see Git page).
+---
 
+## **Technical Context**
 
+### **Background**
+Starting with Build 18963, Windows introduced centralized exports in ntdll.dll for feature work. Previously, developers had to manually interact with WNF state data blobs to configure features.
 
-**Support Both WNF & RTL Libaries, Also Supprt RTL Kernel Libary Table Look UP**
+* **Fcon**: Feature Configuration library (System32).
+* **WNF**: Windows Notification Facility (Kernel-mode pub/sub).
+* **RTL**: Run-Time Library functions inside ntdll.
 
-## ⚠️ Warning and Disclaimer
+### **WNF State Stores**
+The system uses specific 64-bit State Names to store feature overrides:
 
-This script uses **undocumented Windows Native APIs** (`NtSetSystemInformation`, `RtlSetFeatureConfigurations`, etc.) and directly manipulates the operating system's internal feature management configuration, including registry overrides.
+* **Machine Store**: 0x418A073AA3BC7C75L
+* **User Store**: 0x418A073AA3BC88F5L
 
-* **Use at your own risk.** Altering features may lead to system instability, crashes, or unexpected behavior.
+---
 
-* **Always back up your system** before making significant changes.
+## **PowerShell Implementation**
 
-* The logic and offsets are based on reverse-engineered information and **may break in future Windows updates.**
+#region "Feature, WNF"
+function Init-WNF {
+    if (-not ([PSTypeName]'WNF_FEATURE_ENTRY').Type) {
+        New-Struct -Module (New-InMemoryModule -ModuleName WNF_FEATURE_ENTRY) -FullName WNF_FEATURE_ENTRY -StructFields @{
+            FeatureId = New-field 0 UInt32
+            PackedBits = New-field 1 UInt32
+            Payload = New-field 2 UInt32
+        } | Out-Null
+    }
+    $functions = @(
+        @{ Name="NtQueryWnfStateData"; Dll="ntdll.dll"; ReturnType=[Int32]; Parameters=[Type[]]@([UInt64].MakeByRefType(), [Int64], [Int64], [UInt32].MakeByRefType(), [IntPtr], [UInt32].MakeByRefType()) },
+        @{ Name="NtUpdateWnfStateData"; Dll="ntdll.dll"; ReturnType=[Int32]; Parameters=[Type[]]@([UInt64].MakeByRefType(), [IntPtr], [UInt32], [UInt32].MakeByRefType(), [UInt64], [UInt32], [UInt32]) }
+    )
+    $Global:wnf = Register-NativeMethods $functions
+}
+#endregion
 
-## 🌟 Features
+---
 
-* **Feature Control:** Enable, Disable, or Reset (return to default) specific feature IDs.
+## **Usage**
 
-* **Persistent Configuration:** Applies necessary registry overrides to ensure changes persist across reboots.
+### **1. Check Feature Status**
+**To see if a specific feature has an override in the Machine store:**
+Query-WnfFeatureConfig -Store "Machine" -Feature 12345678
 
-* **Boot Status Management:** Updates the system boot status to ensure pending feature changes are applied.
+**To list all current overrides in the User store:**
+Query-WnfFeatureConfig -Store "User" -OutList
 
-* **Dynamic PInvoke:** Uses reflection and dynamic PInvoke to call necessary functions from `ntdll.dll` without requiring external DLLs.
+### **2. Set Feature Overrides**
+**To force-enable or force-disable a feature:**
 
-## 🛠️ Prerequisites
+**Enable a feature**
+Set-WnfFeatureConfig -Store "Machine" -Mode "Enable" -Feature 12345678
 
-* **Operating System:** Windows 10 or Windows 11.
+**Disable a feature**
+Set-WnfFeatureConfig -Store "User" -Mode "Disable" -Feature 12345678
 
-* **PowerShell:** Windows PowerShell or PowerShell Core.
+**Reset to default**
+Set-WnfFeatureConfig -Store "Machine" -Mode "Default" -Feature 12345678
 
-* **Permissions:** The script **must be run with Administrator privileges.**
+---
 
-## 🚀 Usage
-
-### 1. Load the Function
-
-First, save the script content as a `.ps1` file (e.g., `FeatureManager.ps1`) and load it into your PowerShell session:
-
-```powershell
-# Run PowerShell as Administrator
-. .\FeatureManager.ps1
-```
-
-### 2. Function Syntax
-
-The function requires at least two mandatory parameters: the Feature ID(s) and the desired state.
-
-```powershell
-Clear-Host
-Write-Host
-
-Write-Host 'RTL Runtime Store' -ForegroundColor Green -NoNewline
-
-$Feature = 58755790
-$Feature = @(57517687, 58755790, 59064570)
-
-Set-FeatureConfiguration -Feature $feature -Action Disable -Mode Policy | Out-Null
-Set-FeatureConfiguration -Feature $feature -Action Disable -Mode User   | Out-Null
-Query-KernelFeatureState -Feature $feature -Store Runtime
-
-Write-Host "RTL, Mode: Enable`n" -ForegroundColor Green
-
-Set-FeatureConfiguration -Feature $Feature -Action Enable -Mode User   | Out-Null
-Set-FeatureConfiguration -Feature $Feature -Action Enable -Mode Policy | Out-Null
-Query-FeatureConfiguration -Feature  $Feature
-
-Write-Host "RTL, Mode: Disable`n" -ForegroundColor Green
-
-Set-FeatureConfiguration -Feature $Feature -Action Disable -Mode User   | Out-Null
-Set-FeatureConfiguration -Feature $Feature -Action Disable -Mode Policy | Out-Null
-Query-FeatureConfiguration -Feature  $Feature
-
-Write-Host "RTL, Mode: Reset`n" -ForegroundColor Green
-
-Set-FeatureConfiguration -Feature $Feature -Action Reset -Mode User   | Out-Null
-Set-FeatureConfiguration -Feature $Feature -Action Reset -Mode Policy | Out-Null
-Query-FeatureConfiguration -Feature  $Feature
-
-Write-Host 'WNF, Mode: Enable' -ForegroundColor Green
-Write-Host
-
-Set-WnfFeatureConfig -Store User    -Mode Enable -Feature $Feature | Out-Null
-Set-WnfFeatureConfig -Store Machine -Mode Enable -Feature $Feature | Out-Null
-Query-WnfFeatureConfig -Store User    -Feature $Feature
-Query-WnfFeatureConfig -Store Machine -Feature $Feature
-
-Write-Host "WNF, Mode: Disable`n" -ForegroundColor Green
-
-Set-WnfFeatureConfig -Store User    -Mode Disable -Feature $Feature | Out-Null
-Set-WnfFeatureConfig -Store Machine -Mode Disable -Feature $Feature | Out-Null
-Query-WnfFeatureConfig -Store User    -Feature $Feature
-Query-WnfFeatureConfig -Store Machine -Feature $Feature
-
-Write-Host "WNF, Mode: Default`n" -ForegroundColor Green
-
-Set-WnfFeatureConfig -Store User    -Mode Default -Feature $Feature | Out-Null
-Set-WnfFeatureConfig -Store Machine -Mode Default -Feature $Feature | Out-Null
-Query-WnfFeatureConfig -Store User    -Feature $Feature
-Query-WnfFeatureConfig -Store Machine -Feature $Feature
-
-return
-```
-
-## 📝 Technical Notes
-
-The script implements two main actions:
-
-1. **API Call:** It calls the native function (via PInvoke) that internally points to `RtlSetFeatureConfigurations` using the `NtSetSystemInformation` syscall (SystemInformationClass 210). This immediately updates the runtime feature state and schedules a boot-time update if necessary.
-
-2. **Registry Overrides:** It sets feature overrides in the registry paths:
-
-   * **User/Default:** `HKLM:\SYSTEM\CurrentControlSet\Control\FeatureManagement\Overrides\08\<ObfuscatedId>`
-
-   * **Global/Priority 10:** `HKLM:\SYSTEM\CurrentControlSet\Policies\Microsoft\FeatureManagement\Overrides`
-
-These registry keys ensure that the feature state remains constant even after future system updates or policy checks.
+## **References**
+* **Mach2 GitHub (Rafael Rivera)**
+* **Visiting Vibranium Velocity (Medium)**
