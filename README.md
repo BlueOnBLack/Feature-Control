@@ -74,49 +74,57 @@ The following demo showcases the full lifecycle of feature manipulation across b
 
 ```powershell
 Clear-Host
-Write-Host '--- RTL & WNF STACK DEMO ---' -ForegroundColor Cyan
+Write-Host
 
+Write-Host 'RTL Runtime Store' -ForegroundColor Green -NoNewline
+
+$Feature = 58755790
 $Feature = @(57517687, 58755790, 59064570)
 
-Write-Host '1. RTL Runtime Store Initialization' -ForegroundColor Green
-Set-FeatureConfiguration -Feature $Feature -Action Disable -Mode Policy | Out-Null
-Set-FeatureConfiguration -Feature $Feature -Action Disable -Mode User   | Out-Null
-Query-KernelFeatureState -Feature $Feature -Store Runtime
+Set-FeatureConfiguration -Feature $feature -Action Disable -Mode Policy | Out-Null
+Set-FeatureConfiguration -Feature $feature -Action Disable -Mode User   | Out-Null
+Query-KernelFeatureState -Feature $feature -Store Runtime
 
-Write-Host "`n2. RTL, Mode: Enable" -ForegroundColor Green
+Write-Host "RTL, Mode: Enable`n" -ForegroundColor Green
+
 Set-FeatureConfiguration -Feature $Feature -Action Enable -Mode User   | Out-Null
 Set-FeatureConfiguration -Feature $Feature -Action Enable -Mode Policy | Out-Null
-Query-FeatureConfiguration -Feature $Feature
+Query-FeatureConfiguration -Feature  $Feature
 
-Write-Host "`n3. RTL, Mode: Disable" -ForegroundColor Green
+Write-Host "RTL, Mode: Disable`n" -ForegroundColor Green
+
 Set-FeatureConfiguration -Feature $Feature -Action Disable -Mode User   | Out-Null
 Set-FeatureConfiguration -Feature $Feature -Action Disable -Mode Policy | Out-Null
-Query-FeatureConfiguration -Feature $Feature
+Query-FeatureConfiguration -Feature  $Feature
 
-Write-Host "`n4. RTL, Mode: Reset (Clean Overrides)" -ForegroundColor Green
+Write-Host "RTL, Mode: Reset`n" -ForegroundColor Green
+
 Set-FeatureConfiguration -Feature $Feature -Action Reset -Mode User   | Out-Null
 Set-FeatureConfiguration -Feature $Feature -Action Reset -Mode Policy | Out-Null
-Query-FeatureConfiguration -Feature $Feature
+Query-FeatureConfiguration -Feature  $Feature
 
-Write-Host "`n5. WNF, Mode: Enable (Live Memory Update)" -ForegroundColor Green
+Write-Host 'WNF, Mode: Enable' -ForegroundColor Green
+Write-Host
+
 Set-WnfFeatureConfig -Store User    -Mode Enable -Feature $Feature | Out-Null
 Set-WnfFeatureConfig -Store Machine -Mode Enable -Feature $Feature | Out-Null
 Query-WnfFeatureConfig -Store User    -Feature $Feature
 Query-WnfFeatureConfig -Store Machine -Feature $Feature
 
-Write-Host "`n6. WNF, Mode: Disable" -ForegroundColor Green
+Write-Host "WNF, Mode: Disable`n" -ForegroundColor Green
+
 Set-WnfFeatureConfig -Store User    -Mode Disable -Feature $Feature | Out-Null
 Set-WnfFeatureConfig -Store Machine -Mode Disable -Feature $Feature | Out-Null
 Query-WnfFeatureConfig -Store User    -Feature $Feature
 Query-WnfFeatureConfig -Store Machine -Feature $Feature
 
-Write-Host "`n7. WNF, Mode: Default (Clear Blobs)" -ForegroundColor Green
+Write-Host "WNF, Mode: Default`n" -ForegroundColor Green
+
 Set-WnfFeatureConfig -Store User    -Mode Default -Feature $Feature | Out-Null
 Set-WnfFeatureConfig -Store Machine -Mode Default -Feature $Feature | Out-Null
 Query-WnfFeatureConfig -Store User    -Feature $Feature
 Query-WnfFeatureConfig -Store Machine -Feature $Feature
 
-Write-Host "`nDemo Complete." -ForegroundColor Cyan
 return
 ```
 
