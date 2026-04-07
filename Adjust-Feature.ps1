@@ -242,9 +242,6 @@ function Register-NativeMethods {
 <#
 Based on ViveTool Source code.
 namespace --> Albacore.ViVeTool
-           
-@ Mach2
-@ https://github.com/riverar/mach2
 
 @ ViVe \ ViVeTool GUI
 @ https://github.com/thebookisclosed/ViVe
@@ -483,7 +480,8 @@ enum _RTL_FEATURE_ENABLED_STATE_OPTIONS
 }; 
 #>
 Function Init-RTL {
-
+    
+    # Define the KERNEL FEATURE TABLE struct
     if (-not ([PSTypeName]'KERNEL_FEATURE_TABLE').Type) {
         New-Struct `
             -Module (New-InMemoryModule -ModuleName KERNEL_FEATURE_TABLE) `
@@ -617,21 +615,18 @@ function Write-FeatureData {
         [int]     $Operation = 0x0
     )
 
-    [RTL_FEATURE_CONFIGURATION_UPDATE]$update = [Activator]::CreateInstance([RTL_FEATURE_CONFIGURATION_UPDATE])
-    $update.FeatureId           = $FeatureId
-    $update.Priority            = $Priority
-    $update.EnabledState        = $EnabledState
-    $update.PackedOptions       = ($VariantPayloadKind -band 0x1) -shl 6
-    $update.EnabledStateOptions = [byte]$EnabledStateOptions
-    $update.VariantFlags        = $VariantFlags
-    $update.VariantPayload      = [uint32]$VariantPayload
-    $update.Operation           = $Operation
+    $structure = [Activator]::CreateInstance([RTL_FEATURE_CONFIGURATION_UPDATE])
+    $structure.FeatureId           = $FeatureId
+    $structure.Priority            = $Priority
+    $structure.EnabledState        = $EnabledState
+    $structure.PackedOptions       = ($VariantPayloadKind -band 0x1) -shl 6
+    $structure.EnabledStateOptions = [byte]$EnabledStateOptions
+    $structure.VariantFlags        = $VariantFlags
+    $structure.VariantPayload      = [uint32]$VariantPayload
+    $structure.Operation           = $Operation
 
-    [marshal]::StructureToPtr(
-        $update,
-        ([IntPtr]::Add($UpdatePackage, ($BaseOffset + (0x20 * $Index)))), 
-        $true
-    )
+    $ptr = ([IntPtr]::Add($UpdatePackage, ($BaseOffset + (0x20 * $Index))))
+    [marshal]::StructureToPtr($structure, $ptr, $true)
 }
 function Obfuscate-FeatureId {
     param(
@@ -688,7 +683,7 @@ function Set-FeatureConfiguration {
 
     try {
 
-        $header = if (([System.Environment]::OSVersion.Version.Build) -ge 22000) {
+        $header = if (([Environment]::OSVersion.Version.Build) -ge 22000) {
             [Activator]::CreateInstance([Type]'RTL_FEATURE_CONFIGURATION_HEADER_EXT')
         } else {
             [Activator]::CreateInstance([Type]'RTL_FEATURE_CONFIGURATION_HEADER')
@@ -983,9 +978,10 @@ function Query-KernelFeatureState {
         try {
             $ms.Position = 0x04 # Skip count header
             while ($ms.Position -lt $ms.Length) {
-                $entry = $br.ReadBytes(0x0C)   
+                $entry = $br.ReadBytes(0x0C)
                 if ($Feature -and ([BitConverter]::ToInt32($entry, 0) -notin $Feature)) { continue }
-                $results.Add((Get-FeatureObjectFromPtr -Buffer $entry))
+                $featureObj = (Get-FeatureObjectFromPtr -Buffer $entry)
+                $results.Add($featureObj)
                 
                 # Some duplicate items can have different priority
                 # if ($Feature -and $results.Count -eq $Feature.Count) { break }
@@ -1001,7 +997,6 @@ function Query-KernelFeatureState {
         Write-Error $_.Exception.Message
     }
     finally {
-        # CRITICAL: Clean up in reverse order of allocation
         if ($baseAddr -ne [IntPtr]::Zero) {
             $Global:RTL::ZwUnmapViewOfSection([IntPtr](-1), $baseAddr) | Out-Null
         }
@@ -1564,16 +1559,10 @@ function Query-WnfFeatureConfig {
 Clear-Host
 Write-Host
 
-Write-Host 'RTL Runtime Store' -ForegroundColor Green -NoNewline
-
 # Feature List
 $Feature = 57517687, 58755790, 59064570
 
-Set-FeatureConfiguration -Feature $feature -Action Disable -Mode Policy | Out-Null
-Set-FeatureConfiguration -Feature $feature -Action Disable -Mode User   | Out-Null
-Query-KernelFeatureState -Feature $feature -Store Runtime
-
-Write-Host "RTL, Mode: Enable`n" -ForegroundColor Green
+Write-Host "RTL, Mode: Enable" -ForegroundColor Green -NoNewline
 
 Set-FeatureConfiguration   -Feature $Feature -Action Enable -Mode User   | Out-Null
 Set-FeatureConfiguration   -Feature $Feature -Action Enable -Mode Policy | Out-Null
