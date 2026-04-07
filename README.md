@@ -68,7 +68,49 @@ The script performs manual bit-shifting for the `WNF_FEATURE_ENTRY` structure:
 
 ---
 
-## 🧪 Full Demonstration Script
+## 🧪  Decode & Encode Feature ID
+
+Here provides Source for Encode & Decode FeatureID in registry
+
+Address: Computer\HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\FeatureManagement\Overrides
+
+```
+* Decode Script
+* _byteswap_ulong(__ROL4__(v18 ^ 0x833EA8FF, 255) ^ 0x8FB23D4F) ^ 0x74161A4E;
+
+// Winload.exe, IDA, Search, 833EA8FFh, OR FeatureManagement <Part Of Registry Path>
+// __int64 __fastcall FsepInitializeFeatureUsageSubscriptions(__int64 a1, unsigned int a2, unsigned int **a3, __int64 *a4)
+// __int64 __fastcall FsepPopulateFeatureConfigurationsForPolicyKey( int a1, unsigned int a2, __int64 *a3, __int64 a4, _DWORD *a5)
+// __int64 __fastcall FsepPopulateFeatureConfigurationsForPriorityKey( __int64 a1, ULONG a2, unsigned int a3, __int64 *a4, __int64 a5, _QWORD *a6, __int64 a7, _DWORD *a8)
+
+* Encode Script
+* __ROR4__(_byteswap_ulong(v18 ^ 0x74161A4E) ^ 0x8FB23D4F, 255) ^ 0x833EA8FF);
+
+// CmService.dll, IDA, Search, 833EA8FFh, OR FeatureManagement <Part Of Registry Path>
+// __int64 __fastcall StorageWriter::CreateFeatureKey(unsigned int a1, int a2, HKEY *a3, const unsigned __int16 *a4)
+
+// MitigationClient.dll, IDA, Search, 833EA8FFh, OR FeatureManagement <Part Of Registry Path>
+// __int64 __fastcall StorageWriter::OpenFeatureKeyForRead(unsigned int a1, int a2, HKEY *a3)
+
+// fcon.dll, IDA, Search, 833EA8FFh, OR FeatureManagement <Part Of Registry Path>
+// __int64 __fastcall StorageWriter::DeletePolicyFeatureState(int a1)
+// __int64 __fastcall StorageWriter::WritePolicyFeatureState(int a1, int a2)
+// __int64 __fastcall StorageWriter::DeleteFeatureState(unsigned int a1, int a2)
+// __int64 __fastcall StorageWriter::OpenFeatureSubscriptionsKey(int a1, HKEY *a2)
+// __int64 __fastcall StorageWriter::CreateFeatureSubscriptionsKey(int a1, HKEY *a2, const unsigned __int16 *a3)
+// __int64 __fastcall StorageWriter::DeleteFeatureSubscriptions(struct _RTL_FEATURE_USAGE_SUBSCRIPTION_DETAILS *a1, unsigned __int64 a2)
+
+// C+ Demo using <_rotr, _rotl> instead of <__ROL4__, __ROR4__>
+// Decode Script, _byteswap_ulong(__ROL4__(v18 ^ 0x833EA8FF, 255) ^ 0x8FB23D4F) ^ 0x74161A4E; // Winload.exe
+// Encode Script, __ROR4__(_byteswap_ulong(a2 ^ 0x74161A4E) ^ 0x8FB23D4F, 255) ^ 0x833EA8FF); // CmService.dll, MitigationClient.dll, fcon.dll
+uint32_t DecodedID, EncodedID; DecodedID = 58755790U; EncodedID = 2642149007U;
+std::cout << ((_byteswap_ulong(_rotl(EncodedID ^ 0x833EA8FF, (255 % 32)) ^ 0x8FB23D4F) ^ 0x74161A4E)) << "   Is Match to " << DecodedID << "\n"; // Decode Value
+std::cout << (_rotr(_byteswap_ulong(DecodedID ^ 0x74161A4E) ^ 0x8FB23D4F, (255 % 32)) ^ 0x833EA8FF) << " Is Match to " << EncodedID << "\n";     // Encode Value
+```
+
+---
+
+## 🧪  Demonstration Script
 
 The following demo showcases the full lifecycle of feature manipulation across both RTL and WNF stacks.
 
