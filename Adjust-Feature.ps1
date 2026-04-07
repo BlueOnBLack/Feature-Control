@@ -256,6 +256,134 @@ namespace --> Albacore.ViVeTool
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+</
+$Path = "C:\Windows\System32"
+$Extensions = @("*.exe", "*.dll", "*.sys")
+$Files = Get-ChildItem -Path $Path -File -ErrorAction SilentlyContinue | 
+         Where-Object { $_.Extension -match '\.(exe|dll|sys)$' } | select FullName
+
+$Files | % {
+    $Name = $_.FullName
+    $Data = Get-Strings -Path $Name -MinimumLength 15 | ? { $_ -match 'FeatureManagement' } 
+    if ($Data) {
+      write-host $Name -ForegroundColor Green
+      $Data        
+    }
+}
+/>
+
+* Decode Script
+* _byteswap_ulong(__ROL4__(v18 ^ 0x833EA8FF, 255) ^ 0x8FB23D4F) ^ 0x74161A4E;
+
+// Winload.exe, IDA, Search, 833EA8FFh, OR FeatureManagement <Part Of Registry Path>
+// __int64 __fastcall FsepInitializeFeatureUsageSubscriptions(__int64 a1, unsigned int a2, unsigned int **a3, __int64 *a4)
+// __int64 __fastcall FsepPopulateFeatureConfigurationsForPolicyKey( int a1, unsigned int a2, __int64 *a3, __int64 a4, _DWORD *a5)
+// __int64 __fastcall FsepPopulateFeatureConfigurationsForPriorityKey( __int64 a1, ULONG a2, unsigned int a3, __int64 *a4, __int64 a5, _QWORD *a6, __int64 a7, _DWORD *a8)
+
+* Encode Script
+* __ROR4__(_byteswap_ulong(v18 ^ 0x74161A4E) ^ 0x8FB23D4F, 255) ^ 0x833EA8FF);
+
+// CmService.dll, IDA, Search, 833EA8FFh, OR FeatureManagement <Part Of Registry Path>
+// __int64 __fastcall StorageWriter::CreateFeatureKey(unsigned int a1, int a2, HKEY *a3, const unsigned __int16 *a4)
+
+// MitigationClient.dll, IDA, Search, 833EA8FFh, OR FeatureManagement <Part Of Registry Path>
+// __int64 __fastcall StorageWriter::OpenFeatureKeyForRead(unsigned int a1, int a2, HKEY *a3)
+
+// fcon.dll, IDA, Search, 833EA8FFh, OR FeatureManagement <Part Of Registry Path>
+// __int64 __fastcall StorageWriter::DeletePolicyFeatureState(int a1)
+// __int64 __fastcall StorageWriter::WritePolicyFeatureState(int a1, int a2)
+// __int64 __fastcall StorageWriter::DeleteFeatureState(unsigned int a1, int a2)
+// __int64 __fastcall StorageWriter::OpenFeatureSubscriptionsKey(int a1, HKEY *a2)
+// __int64 __fastcall StorageWriter::CreateFeatureSubscriptionsKey(int a1, HKEY *a2, const unsigned __int16 *a3)
+// __int64 __fastcall StorageWriter::DeleteFeatureSubscriptions(struct _RTL_FEATURE_USAGE_SUBSCRIPTION_DETAILS *a1, unsigned __int64 a2)
+
+// C+ Demo using <_rotr, _rotl> instead of <__ROL4__, __ROR4__>
+// Decode Script, _byteswap_ulong(__ROL4__(v18 ^ 0x833EA8FF, 255) ^ 0x8FB23D4F) ^ 0x74161A4E; // Winload.exe
+// Encode Script, __ROR4__(_byteswap_ulong(a2 ^ 0x74161A4E) ^ 0x8FB23D4F, 255) ^ 0x833EA8FF); // CmService.dll, MitigationClient.dll, fcon.dll
+uint32_t DecodedID, EncodedID; DecodedID = 58755790U; EncodedID = 2642149007U;
+std::cout << ((_byteswap_ulong(_rotl(EncodedID ^ 0x833EA8FF, (255 % 32)) ^ 0x8FB23D4F) ^ 0x74161A4E)) << "   Is Match to " << DecodedID << "\n"; // Decode Value
+std::cout << (_rotr(_byteswap_ulong(DecodedID ^ 0x74161A4E) ^ 0x8FB23D4F, (255 % 32)) ^ 0x833EA8FF) << " Is Match to " << EncodedID << "\n";     // Encode Value
+
+// Vive Code. Decode & Encode.
+namespace Albacore.ViVe
+{
+    public static class ObfuscationHelpers
+    {
+        private static uint SwapBytes(uint x)
+        {
+            x = (x >> 16) | (x << 16);
+            return ((x & 0xFF00FF00) >> 8) | ((x & 0x00FF00FF) << 8);
+        }
+        private static uint RotateRight32(uint value, int shift)
+        {
+            return (value >> shift) | (value << (32 - shift));
+        }
+        public static uint ObfuscateFeatureId(uint featureId)
+        {
+            return RotateRight32(SwapBytes(featureId ^ 0x74161A4E) ^ 0x8FB23D4F, -1) ^ 0x833EA8FF;
+        }
+        public static uint DeobfuscateFeatureId(uint featureId)
+        {
+            return SwapBytes(RotateRight32(featureId ^ 0x833EA8FF, 1) ^ 0x8FB23D4F) ^ 0x74161A4E;
+        }
+    }
+}
+
++-+-+-+-+-+-+-+-
+! OR ps1 demo. !
++-+-+-+-+-+-+-+-
+
+Clear-Host
+Write-Host
+
+# Constants found in winload.exe / Fsep functions
+$MAGIC_1 = 0x833EA8FF
+$MAGIC_2 = 0x8FB23D4F
+$MAGIC_3 = 0x74161A4E
+
+function Invoke-BitOp {
+    param (
+        [uint32]$Value,
+        [Parameter(Mandatory=$true)][ValidateSet("RotateLeft", "RotateRight", "SwapBytes")][string]$Operation,
+        [int]$Shift = 0
+    )
+    switch ($Operation) {
+        "RotateLeft"  { $s = $Shift % 32; return [uint32](($Value -shl $s) -bor ($Value -shr (32 - $s))) }
+        "RotateRight" { $s = $Shift % 32; return [uint32](($Value -shr $s) -bor ($Value -shl (32 - $s))) }
+        "SwapBytes"   { 
+            $bytes = [BitConverter]::GetBytes($Value)
+            [Array]::Reverse($bytes)
+            return [BitConverter]::ToUInt32($bytes, 0)
+        }
+    }
+}
+
+# Values to verify
+[uint32]$DecodedID = 58755790
+[uint32]$EncodedID = 2642149007
+
+# 1. DEOBFUSCATE (Encoded -> Decoded)
+$d = $EncodedID -bxor $MAGIC_1
+$d = Invoke-BitOp $d -Operation RotateLeft -Shift 255
+$d = $d -bxor $MAGIC_2
+$d = Invoke-BitOp $d -Operation SwapBytes
+$FinalDecoded = $d -bxor $MAGIC_3
+
+# 2. OBFUSCATE (Decoded -> Encoded)
+$e = $DecodedID -bxor $MAGIC_3
+$e = Invoke-BitOp $e -Operation SwapBytes
+$e = $e -bxor $MAGIC_2
+$e = Invoke-BitOp $e -Operation RotateRight -Shift 255
+$FinalEncoded = $e -bxor $MAGIC_1
+
+# Results Output
+Write-Host "--- Feature ID Translation ---" -ForegroundColor Cyan
+[String]::Format("Decoded: {0}   (Expected: {1})   - Match: {2}", $FinalDecoded, $DecodedID, ($FinalDecoded -eq $DecodedID))
+[String]::Format("Encoded: {0} (Expected: {1}) - Match: {2}", $FinalEncoded, $EncodedID, ($FinalEncoded -eq $EncodedID))
+Write-Host
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 (Query-KernelFeatureState -Store Runtime).Count -eq (Query-FeatureConfiguration -OutList -Store Runtime).Count == MATCH
 (Query-KernelFeatureState -Store Boot).Count    -eq (Query-FeatureConfiguration -OutList -Store Boot).Count    == MATCH
 
@@ -629,19 +757,13 @@ function Write-FeatureData {
     [marshal]::StructureToPtr($structure, $ptr, $true)
 }
 function Obfuscate-FeatureId {
-    param(
-        [uint32]$featureId
-    )
-
-    [uint32]$x = [uint32]($featureId -bxor 0x74161A4E)
-    $x = [uint32]((($x -shr 16) -bor ($x -shl 16)) -band 0xFFFFFFFF)
-    $x = [uint32]((($x -band 0xFF00FF00) -shr 8) -bor (($x -band 0x00FF00FF) -shl 8))
-    $x = [uint32]($x -band 0xFFFFFFFF)
-    [uint32]$intermediate = [uint32]($x -bxor 0x8FB23D4F)
-    [uint32]$rot = [uint32]( (($intermediate -shl 1) -band 0xFFFFFFFF) -bor (($intermediate -shr 31) -band 0x1) )
-    $rot = [uint32]($rot -band 0xFFFFFFFF)
-    [uint32]$result = [uint32]($rot -bxor 0x833EA8FF)
-    return $result
+    param($featureId)
+    # __ROR4__(_byteswap_ulong(v18 ^ 0x74161A4E) ^ 0x8FB23D4F, 255) ^ 0x833EA8FF) // Source, Winload.exe
+    $x = [uint32]$featureId -bxor 0x74161A4E
+    $x = [uint32]((($x -band 0xFF) -shl 24) -bor (($x -band 0xFF00) -shl 8) -bor (($x -band 0xFF0000) -shr 8) -bor ($x -shr 24))
+    $x = $x -bxor 0x8FB23D4F
+    $x = [uint32]( (($x -shl 1) -band 0xFFFFFFFF) -bor ($x -shr 31) )
+    return $x -bxor 0x833EA8FF
 }
 function Set-FeatureConfiguration {
     [CmdletBinding()]
