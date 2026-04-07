@@ -105,7 +105,8 @@ This demo uses standard intrinsic-style rotations (`_rotl`, `_rotr`).
 #include <iostream>
 #include <intrin.h> // For _rotl, _rotr, _byteswap_ulong
 
-void DemoTransform() {
+int main()
+{
     uint32_t DecodedID = 58755790U;
     uint32_t EncodedID = 2642149007U;
 
