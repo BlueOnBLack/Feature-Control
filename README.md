@@ -105,19 +105,35 @@ This demo uses standard intrinsic-style rotations (`_rotl`, `_rotr`).
 #include <iostream>
 #include <intrin.h>
 #include <windows.h>
+#include <vector>
+
+struct TestCase {
+    uint32_t decoded;
+    uint32_t encoded;
+};
 
 int main()
 {
-    uint32_t DecodedID = 58755790U;
-    uint32_t EncodedID = 2642149007U;
+    std::vector<TestCase> tests = {
+        { 57517687,  4011992206U },
+        { 58992578,  2216818319U },
+        { 58755790,  2642149007U },
+        { 59064570,  4109366415U }
+    };
+    std::cout << "Starting validation for " << tests.size() << " cases...\n";
+    std::cout << "--------------------------------------------------\n";
+    for (const auto& test : tests) {
+        uint32_t resultDecoded = _byteswap_ulong(_rotl(test.encoded ^ 0x833EA8FF, (255 % 32)) ^ 0x8FB23D4F) ^ 0x74161A4E;
+        uint32_t resultEncoded = _rotr(_byteswap_ulong(test.decoded ^ 0x74161A4E) ^ 0x8FB23D4F, (255 % 32)) ^ 0x833EA8FF;
 
-    // --- Decode Process ---
-    uint32_t resultDecoded = _byteswap_ulong(_rotl(EncodedID ^ 0x833EA8FF, (255 % 32)) ^ 0x8FB23D4F) ^ 0x74161A4E;
-    std::cout << "Decoded: " << resultDecoded << (resultDecoded == DecodedID ? "   [Match]" : "   [Mismatch]") << "\n";
+        std::cout << "Test Decoded " << test.decoded << ": "
+            << (resultDecoded == test.decoded ? "  [PASS]" : "  [FAIL]") << "\n";
+        std::cout << "Test Encoded " << test.encoded << ": "
+            << (resultEncoded == test.encoded ? "[PASS]" : "[FAIL]") << "\n";
+        std::cout << "--------------------------------------------------\n";
+    }
 
-    // --- Encode Process ---
-    uint32_t resultEncoded = _rotr(_byteswap_ulong(DecodedID ^ 0x74161A4E) ^ 0x8FB23D4F, (255 % 32)) ^ 0x833EA8FF;
-    std::cout << "Encoded: " << resultEncoded << (resultEncoded == EncodedID ? " [Match]" : " [Mismatch]") << "\n";
+    return 0;
 }
 ```
 ---
