@@ -99,7 +99,9 @@ Used to generate the value stored in the registry.
 ---
 
 ### 🧠 Kernel-Mode Memory Layout (Feature Tables)
-While the RTL layer manages the Registry and WNF manages notifications, the **Kernel Feature Table** is the actual memory-mapped structure used by the Windows Executive (`ntoskrnl.exe`) to evaluate feature states at runtime.
+While the RTL layer manages the Registry and WNF manages notifications, 
+
+the **Kernel Feature Table** is the actual memory-mapped structure used by the Windows Executive (`ntoskrnl.exe`) to evaluate feature states at runtime.
 
 ```text
 typedef enum _SYSTEM_FEATURE_CONFIGURATION_SECTION_TYPE {
@@ -129,7 +131,7 @@ typedef struct _KERNEL_FEATURE_TABLE {
     /* 0x48 */ UINT64 Default_Size;     // Total bytes in the section
 
 } KERNEL_FEATURE_TABLE, *PKERNEL_FEATURE_TABLE;
-
+```
 ---
 
 ### 💻 C++ Implementation Example
