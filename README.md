@@ -98,6 +98,40 @@ Used to generate the value stored in the registry.
 
 ---
 
+### 🧠 Kernel-Mode Memory Layout (Feature Tables)
+While the RTL layer manages the Registry and WNF manages notifications, the **Kernel Feature Table** is the actual memory-mapped structure used by the Windows Executive (`ntoskrnl.exe`) to evaluate feature states at runtime.
+
+```text
+typedef enum _SYSTEM_FEATURE_CONFIGURATION_SECTION_TYPE {
+    Boot          = 0,
+    Runtime       = 1,
+    UsageTriggers = 2,
+    Count         = 3
+} SYSTEM_FEATURE_CONFIGURATION_SECTION_TYPE;
+
+typedef struct _KERNEL_FEATURE_TABLE {
+
+    /* 0x00 */ UINT64 ChangeStamp;      // Global sequence number for updates
+    
+    // --- Boot Section (Block 1) ---
+    /* 0x08 */ UINT64 Boot_STAMP;       // Section-specific version/stamp (HeaderFlags)
+    /* 0x10 */ HANDLE Boot_Handle;      // Section object handle
+    /* 0x18 */ UINT64 Boot_Size;        // Total bytes in the section
+    
+    // --- Runtime Section (Block 2) ---
+    /* 0x20 */ UINT64 Runtime_STAMP;    // Section-specific stamp
+    /* 0x28 */ HANDLE Runtime_Handle;   // Section object handle
+    /* 0x30 */ UINT64 Runtime_Size;     // Total bytes in the section
+    
+    // --- Default Section (Block 3) ---
+    /* 0x38 */ UINT64 Default_STAMP;    // Section-specific stamp
+    /* 0x40 */ HANDLE Default_Handle;   // Section object handle
+    /* 0x48 */ UINT64 Default_Size;     // Total bytes in the section
+
+} KERNEL_FEATURE_TABLE, *PKERNEL_FEATURE_TABLE;
+
+---
+
 ### 💻 C++ Implementation Example
 This demo uses standard intrinsic-style rotations (`_rotl`, `_rotr`).
 
