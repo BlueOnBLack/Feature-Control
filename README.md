@@ -104,6 +104,7 @@ This demo uses standard intrinsic-style rotations (`_rotl`, `_rotr`).
 ```cpp
 #include <iostream>
 #include <intrin.h>
+#include <windows.h>
 
 int main()
 {
@@ -112,7 +113,7 @@ int main()
 
     // --- Decode Process ---
     uint32_t resultDecoded = _byteswap_ulong(_rotl(EncodedID ^ 0x833EA8FF, (255 % 32)) ^ 0x8FB23D4F) ^ 0x74161A4E;
-    std::cout << "Decoded: " << resultDecoded << (resultDecoded == DecodedID ? " [Match]" : " [Mismatch]") << "\n";
+    std::cout << "Decoded: " << resultDecoded << (resultDecoded == DecodedID ? "   [Match]" : "   [Mismatch]") << "\n";
 
     // --- Encode Process ---
     uint32_t resultEncoded = _rotr(_byteswap_ulong(DecodedID ^ 0x74161A4E) ^ 0x8FB23D4F, (255 % 32)) ^ 0x833EA8FF;
