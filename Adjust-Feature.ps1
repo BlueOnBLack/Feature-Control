@@ -1219,7 +1219,6 @@ function Init-WNF {
                 FeatureUsageTriggerCount  = New-field 4 UInt16    # 0x06
                 SessionProperties         = New-field 5 UInt32    # 0x08
                 Properties                = New-field 6 UInt32    # 0x0C
-                # Note: The array of WNF_FEATURE_ENTRY structs follows immediately after this header
             } | Out-Null
     }
 
