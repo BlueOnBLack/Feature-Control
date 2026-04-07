@@ -259,6 +259,60 @@ namespace --> Albacore.ViVeTool
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+(Query-KernelFeatureState -Store Runtime).Count -eq (Query-FeatureConfiguration -OutList -Store Runtime).Count == MATCH
+(Query-KernelFeatureState -Store Boot).Count    -eq (Query-FeatureConfiguration -OutList -Store Boot).Count    == MATCH
+
+typedef struct _KERNEL_FEATURE_TABLE {
+
+    /* 0x00 */ UINT64 ChangeStamp;      // Global sequence number for updates
+    
+    // --- Boot Section (Block 1) ---
+    /* 0x08 */ UINT64 Boot_STAMP;       // Section-specific version/stamp (HeaderFlags)
+    /* 0x10 */ HANDLE Boot_Handle;      // Section object handle
+    /* 0x18 */ UINT64 Boot_Size;        // Total bytes in the section
+    
+    // --- Runtime Section (Block 2) ---
+    /* 0x20 */ UINT64 Runtime_STAMP;    // Section-specific stamp
+    /* 0x28 */ HANDLE Runtime_Handle;   // Section object handle
+    /* 0x30 */ UINT64 Runtime_Size;     // Total bytes in the section
+    
+    // --- Default Section (Block 3) ---
+    /* 0x38 */ UINT64 Default_STAMP;    // Section-specific stamp
+    /* 0x40 */ HANDLE Default_Handle;   // Section object handle
+    /* 0x48 */ UINT64 Default_Size;     // Total bytes in the section
+
+} KERNEL_FEATURE_TABLE, *PKERNEL_FEATURE_TABLE;
+
+typedef enum _RTL_FEATURE_CONFIGURATION_PRIORITY {
+    ImageDefault        = 0,
+    EKB                 = 1,
+    Safeguard           = 2,
+    Persistent          = 2,  // same as Safeguard
+    Reserved3           = 3,
+    Service             = 4,
+    Reserved5           = 5,
+    Dynamic             = 6,
+    Reserved7           = 7,
+    User                = 8,
+    Security            = 9,
+    UserPolicy          = 0xA,
+    ConfigurationSystem = 0xB,
+    Test                = 0xC,
+    Reserved13          = 0xD,
+    Reserved14          = 0xE,
+    ImageOverride       = 0xF,
+    Max                 = 0xF
+} RTL_FEATURE_CONFIGURATION_PRIORITY;
+
+typedef enum _SYSTEM_FEATURE_CONFIGURATION_SECTION_TYPE {
+    Boot          = 0,
+    Runtime       = 1,
+    UsageTriggers = 2,
+    Count         = 3
+} SYSTEM_FEATURE_CONFIGURATION_SECTION_TYPE;
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 * RTL_FEATURE_CONFIGURATION_UPDATE - NtDoc
 * https://ntdoc.m417z.com/rtl_feature_configuration_update
 
@@ -429,7 +483,57 @@ enum _RTL_FEATURE_ENABLED_STATE_OPTIONS
 }; 
 #>
 Function Init-RTL {
-    
+
+    if (-not ([PSTypeName]'KERNEL_FEATURE_TABLE').Type) {
+        New-Struct `
+            -Module (New-InMemoryModule -ModuleName KERNEL_FEATURE_TABLE) `
+            -FullName KERNEL_FEATURE_TABLE `
+            -StructFields @{
+                # --- Global Header ---
+                ChangeStamp    = New-field 0  UInt64     # 0x00: Global Sequence
+
+                # --- Boot Store Block (Offset 0x08 - 0x1F) ---
+                Boot_Stamp     = New-field 1  UInt64     # 0x08:
+                Boot_Handle    = New-field 2  UInt64     # 0x10:
+                Boot_Size      = New-field 3  UInt64     # 0x18:
+
+                # --- Runtime Store Block (Offset 0x20 - 0x37) ---
+                Runtime_Stamp    = New-field 4  UInt64   # 0x20:
+                Runtime_Handle   = New-field 5  UInt64   # 0x28:
+                Runtime_Size     = New-field 6  UInt64   # 0x30:
+
+                # --- Empty Store / Sentinel Block (Offset 0x38 - 0x4F) ---
+                Default_Stamp    = New-field 7  UInt64   # 0x38:
+                Default_Handle   = New-field 8  UInt64   # 0x40:
+                Default_Size     = New-field 9  UInt64   # 0x48:
+            } | Out-Null
+    }
+
+    # Define the RTL feature update Header struct
+    if (-not ([PSTypeName]'RTL_FEATURE_CONFIGURATION_HEADER').Type) {
+        New-Struct `
+            -Module (New-InMemoryModule -ModuleName RTL_FEATURE_CONFIGURATION_HEADER) `
+            -FullName RTL_FEATURE_CONFIGURATION_HEADER `
+            -StructFields @{
+                PreviousStamp     = New-field 0 UInt64  # 0x00
+                ConfigurationType = New-field 1 Int32   # 0x08 Boot=0, Runtime=1
+                FeatureCount      = New-field 2 Int32   # 0x0C Number of features
+            } | Out-Null
+    }
+
+    # Define the RTL feature update Header struct
+    if (-not ([PSTypeName]'RTL_FEATURE_CONFIGURATION_HEADER_EXT').Type) {
+        New-Struct `
+            -Module (New-InMemoryModule -ModuleName RTL_FEATURE_CONFIGURATION_HEADER_EXT) `
+            -FullName RTL_FEATURE_CONFIGURATION_HEADER_EXT `
+            -StructFields @{
+                Reserved          = New-field 0 UInt64  # 0x00
+                PreviousStamp     = New-field 1 UInt64  # 0x08
+                ConfigurationType = New-field 2 Int32   # 0x0C Boot=0, Runtime=1
+                FeatureCount      = New-field 3 Int32   # 0x14 Number of features
+            } | Out-Null
+    }
+
     # Define the RTL feature update struct
     if (-not ([PSTypeName]'RTL_FEATURE_CONFIGURATION_UPDATE').Type) {
         New-Struct `
@@ -447,31 +551,6 @@ Function Init-RTL {
                 VariantFlags        = New-field 8  Int32    # 0x14 (The bits at a2+20)
                 VariantPayload      = New-field 9 UInt32    # 0x18 (The value at a2+24)
                 Operation           = New-field 10 Int32    # 0x1C (The v2 check at a2+28)
-            } | Out-Null
-    }
-
-    if (-not ([PSTypeName]'KERNEL_FEATURE_TABLE').Type) {
-        New-Struct `
-            -Module (New-InMemoryModule -ModuleName KERNEL_FEATURE_TABLE) `
-            -FullName KERNEL_FEATURE_TABLE `
-            -StructFields @{
-                # --- Header Block (Row 1-2) ---
-                HeaderVersion   = New-field 0  UInt64   # 0x00
-                HeaderFlags     = New-field 1  UInt64   # 0x08
-
-                # --- Store 1 Block (Row 3-5) ---
-                Default_Handle   = New-field 2  UInt64   # 0x10 (40 09...)
-                Default_Size     = New-field 3  UInt64   # 0x18 (5C 1A...)
-                Default_Version  = New-field 4  UInt64   # 0x20 (01 00...)
-
-                # --- Store 2 Block (Row 6-8) ---
-                Runtime_Handle   = New-field 5  UInt64   # 0x28 (FC 0C...)
-                Runtime_Size     = New-field 6  UInt64   # 0x30 (5C 1A...)
-                Runtime_Version  = New-field 7  UInt64   # 0x38 (01 00...)
-
-                # --- Null/Sentinel Block (Row 9-10) ---
-                Sentinel_Low    = New-field 8  UInt64   # 0x40 (00 00...)
-                Sentinel_High   = New-field 9  UInt64   # 0x48 (00 00...)
             } | Out-Null
     }
 
@@ -584,6 +663,9 @@ function Set-FeatureConfiguration {
         [ValidateSet("User", "Policy")]
         [string]$Mode,
 
+        [ValidateSet("Boot", "Runtime")]
+        [String]$Store = "Runtime",
+
         [switch]$SysCall,
         [switch]$Log
     )
@@ -595,44 +677,35 @@ function Set-FeatureConfiguration {
     $results = $False
     $BootPending = 0x01
     $ConfigurationState = 0x11
+    $type = if ($Store -eq "Boot") { 0x00 } else { 0x01 }
     $Priority = if ($Mode -eq "Policy") {  0x0a } else { 0x08 }
     $OperationType = if ($Action -match "Enable|Disable") { 0x01 -bor 0x02 } else { 0x04 }
     $EnabledState = if ($Action -eq 'Enable') { 0x02 } elseif ($Action -eq 'Disable') { 0x01 } else { 0x00 }
-
     if (!([Security.Principal.WindowsIdentity]::GetCurrent().Groups.Value -contains "S-1-5-32-544")) {
         Write-Error "User doesn't belong to Administrator's group"
         return
     }
 
     try {
-        
-        ## RtlSetFeatureConfigurations in Windows 11, have few change's
-        ## Like, 24 as Base size, instead 16, etc, etc.
-        ## So, += 0x08 for all offset, Solve the problem.
-        
-        $Shift = 0x00
-        $Build = [System.Environment]::OSVersion.Version.Build
-        if ($Build -ge 22000) {
-            $Shift += 0x08
-        }
-        $Offset = [PSObject]@{
-            BaseSize   = ( $Shift + 0x10 )
-            PrevStamp  = ( $Shift + 0x00 )
-            FlagType   = ( $Shift + 0x08 )
-            Count      = ( $Shift + 0x0C )
+
+        $header = if (([System.Environment]::OSVersion.Version.Build) -ge 22000) {
+            [Activator]::CreateInstance([Type]'RTL_FEATURE_CONFIGURATION_HEADER_EXT')
+        } else {
+            [Activator]::CreateInstance([Type]'RTL_FEATURE_CONFIGURATION_HEADER')
         }
 
         $Count = $Feature.Count
+        $BaseSize = [Marshal]::SizeOf($header)
         $PayloadSize = ((0x20 * $Count)+ 7) -band -bnot 7
-        $updatePackage = [marshal]::AllocHGlobal($Offset.BaseSize + $PayloadSize)
-        (0..((($Offset.BaseSize + $PayloadSize)/0x08)-1)) | % {
+        $updatePackage = [marshal]::AllocHGlobal($BaseSize + $PayloadSize)
+        (0..((($BaseSize + $PayloadSize)/0x08)-1)) | % {
             [Marshal]::WriteInt64($updatePackage, ($_*0x08), 0L)
         }
-        
-        $PreviousStamp = [marshal]::ReadInt64([IntPtr]::Add(0x7FFE0000, 0x0710))       # Ntdll!RtlQueryFeatureConfigurationChangeStamp, KI_USER_SHARED_DATA, KSYSTEM_TIME FeatureConfigurationChangeStamp;
-        [marshal]::WriteInt64($updatePackage, $Offset.PrevStamp, $PreviousStamp)       # Previous Stamp / 0x00 / RtlQueryFeatureConfigurationChangeStamp
-        [marshal]::WriteInt32($updatePackage, $Offset.FlagType, 0x01)                  # RunTime = 0x1
-        [marshal]::WriteInt32($updatePackage, $Offset.Count, $Count)                   # Feature Id Total Count
+        $PreviousStamp = [marshal]::ReadInt64([IntPtr]::Add(0x7FFE0000, 0x0710))
+        $header.PreviousStamp = $PreviousStamp
+        $header.ConfigurationType = $type
+        $header.FeatureCount = $Count
+        [Marshal]::StructureToPtr($header, $updatePackage, $true)
 
         $idx = -1;
         foreach ($f in $Feature) {
@@ -647,7 +720,7 @@ function Set-FeatureConfiguration {
             if ($ConfigObj) {
                 Write-FeatureData `
                     -Index (++$idx) `
-                    -BaseOffset $Offset.BaseSize `
+                    -BaseOffset $BaseSize `
                     -UpdatePackage $updatePackage `
                     -FeatureId $ConfigObj.FeatureId `
                     -Priority $ConfigObj.Priority `
@@ -660,7 +733,7 @@ function Set-FeatureConfiguration {
             } else {
                 Write-FeatureData `
                     -Index (++$idx) `
-                    -BaseOffset $Offset.BaseSize `
+                    -BaseOffset $BaseSize `
                     -UpdatePackage $updatePackage `
                     -FeatureId $f `
                     -Priority $Priority `
@@ -681,12 +754,13 @@ function Set-FeatureConfiguration {
             $ret = $RTL::NtSetSystemInformation(
               [Int64]210,
               $updatePackage,
-              ($Offset.BaseSize + $PayloadSize))
+              ($BaseSize + $PayloadSize))
+
         } else {
+
             $ret = $RTL::RtlSetFeatureConfigurations(
-              ([ref]$PreviousStamp),
-              0x01,
-              ([IntPtr]::Add($updatePackage,$Offset.BaseSize)),
+              ([ref]$PreviousStamp), $type,
+              ([IntPtr]::Add($updatePackage, $BaseSize)),
               $Count 
             )
         }
@@ -847,7 +921,7 @@ function Get-FeatureObjectFromPtr {
 }
 function Query-KernelFeatureState {
     param (
-        [ValidateSet("Default", "Runtime")]
+        [ValidateSet("Boot", "Runtime")]
         [String]$Store = "Runtime",
         [Int32[]]$Feature,
         [switch]$Log
@@ -864,6 +938,7 @@ function Query-KernelFeatureState {
 
     # ntoskrnl.exe
     # __int64 __fastcall CmQueryFeatureConfigurationSections
+    # __int64 __fastcall CmFcManagerUpdateFeatureConfigurations(__int64 a1, __int64 a2, int a3, __int64 a4, unsigned int a5)
     # __int64 __fastcall CmFcManagerQueryFeatureConfigurationSectionInformation(__int64 a1, _QWORD *a2, __int64 *a3, KPROCESSOR_MODE a4)
     
     $inSz, $outSz = 0x18, 0x50
@@ -877,16 +952,11 @@ function Query-KernelFeatureState {
     try {
         $status = $Global:RTL::NtQuerySystemInformationEx(211, $pIn, $inSz, $pOut, $outSz, 0L)
         if ($status -ne 0) { throw "NtQuerySystemInformationEx failed: 0x$($status.ToString('X8'))" }
-
-        $table = [KERNEL_FEATURE_TABLE]$pOut
-        if ($Log.IsPresent) {
-          Write-Warning ("Default Size :: {0}" -f $table.Default_Size)
-          Write-Warning ("Runtime Size :: {0}" -f $table.Runtime_Size)
-        }
+        $FeatureTable = [KERNEL_FEATURE_TABLE]$pOut
 
         $hSec = switch ($Store) {
-            'Default' { [Int64]::Parse($table.Default_Handle) }
-            'Runtime' { [Int64]::Parse($table.Runtime_Handle) }
+            'Boot'    { [Int64]::Parse($FeatureTable.Boot_Handle) }
+            'Runtime' { [Int64]::Parse($FeatureTable.Runtime_Handle) }
             Default   { 0L }
         }
         if ($hSec -eq [IntPtr]::Zero) { return @() }
@@ -899,8 +969,8 @@ function Query-KernelFeatureState {
         #$hSize  = 0x04 + ($hCount * 0x0C)
 
         $hSize = switch ($Store) {
-            'Default' { [Int32]($table.Default_Size) }
-            'Runtime' { [Int32]($table.Runtime_Size) }
+            'Boot'    { [Int32]($FeatureTable.Boot_Size) }
+            'Runtime' { [Int32]($FeatureTable.Runtime_Size) }
         }
 
         $buffer = [byte[]]::new($hSize)
@@ -951,11 +1021,11 @@ Function Query-FeatureConfiguration {
       [Parameter(ParameterSetName = 'List')]
       [switch]$OutList,
 
-      [switch]$Atomic,
-      [switch]$SysCall,
+      [ValidateSet("Boot", "Runtime")]
+      [string]$Store = "Runtime",
 
-      [ValidateSet("Runtime", "Boot")]
-      [string]$Type = "Runtime"
+      [switch]$Atomic,
+      [switch]$SysCall
     )
     
     if (!$Global:RTL) {
@@ -969,7 +1039,7 @@ Function Query-FeatureConfiguration {
     [UInt64]$changeStamp = [marshal]::ReadInt64([IntPtr]::Add(0x7FFE0000, 0x0710))
     
     $Results = [List[RTL_FEATURE_INFO]]::new()
-    $configurationType = if ($Type -eq "Runtime") { 0x01 } else { 0x02 }
+    $type = if ($Store -eq "Boot") { 0x00 } else { 0x01 }
     $Filter = $Feature -and $Feature.Count -and $Feature.Count -gt 1 -and !($Atomic.IsPresent)
 
     try {
@@ -982,14 +1052,14 @@ Function Query-FeatureConfiguration {
                     Query-KernelFeatureState -Feature $Feature
                 )
             }
-            $hr = $RTL::RtlQueryAllFeatureConfigurations($ConfigurationType, [ref]$changeStamp, [IntPtr]::Zero, [ref]$configCount)
+            $hr = $RTL::RtlQueryAllFeatureConfigurations($type, [ref]$changeStamp, [IntPtr]::Zero, [ref]$configCount)
             if ($configCount -le 0) { 
                 return $null
             }
 
             $bufferSize = 0x0C * $configCount
             $ConfigPtr = [Marshal]::AllocHGlobal($bufferSize)
-            $hr = $RTL::RtlQueryAllFeatureConfigurations($ConfigurationType, [ref]$changeStamp, $ConfigPtr, [ref]$configCount)
+            $hr = $RTL::RtlQueryAllFeatureConfigurations($type, [ref]$changeStamp, $ConfigPtr, [ref]$configCount)
             if ($hr -ne 0) { 
                 return $null 
             }
@@ -1016,7 +1086,7 @@ Function Query-FeatureConfiguration {
                     # Call To NtQuerySystemInformationEx
                     $QueryPtr = [Marshal]::AllocHGlobal(0x08)
                     $OutPtr = [Marshal]::AllocHGlobal(0x18)
-                    [marshal]::WriteInt32($QueryPtr, 0x00, $configurationType)
+                    [marshal]::WriteInt32($QueryPtr, 0x00, $type)
                     [marshal]::WriteInt32($QueryPtr, 0x04, $f)
 
                     try {
@@ -1047,7 +1117,7 @@ Function Query-FeatureConfiguration {
                     # Call To RtlQueryFeatureConfiguration
                     $ConfigPtr = [Marshal]::AllocHGlobal(0x0c)
                     try {
-                        $hr = $RTL::RtlQueryFeatureConfiguration($f, $configurationType, [ref]$changeStamp, $ConfigPtr)
+                        $hr = $RTL::RtlQueryFeatureConfiguration($f, $type, [ref]$changeStamp, $ConfigPtr)
                         if ($hr -eq 0) {
                             $buffer = New-Object byte[] 0x0C
                             [Marshal]::Copy($ConfigPtr, $buffer, 0, 0x0C)
