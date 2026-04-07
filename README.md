@@ -82,6 +82,7 @@ Overrides are managed at:
 
 #### **Decode Algorithm (Winload.exe)**
 Used to translate the registry value back to a readable Feature ID.
+
 `_byteswap_ulong(__ROL4__(v18 ^ 0x833EA8FF, 255) ^ 0x8FB23D4F) ^ 0x74161A4E;`
 
 **Search Reference (IDA):** `833EA8FFh` or `FeatureManagement`
@@ -89,6 +90,7 @@ Used to translate the registry value back to a readable Feature ID.
 
 #### **Encode Algorithm (CmService.dll / MitigationClient.dll / fcon.dll)**
 Used to generate the value stored in the registry.
+
 `__ROR4__(_byteswap_ulong(v18 ^ 0x74161A4E) ^ 0x8FB23D4F, 255) ^ 0x833EA8FF;`
 
 **Search Reference (IDA):** `833EA8FFh`
