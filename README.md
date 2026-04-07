@@ -103,7 +103,7 @@ This demo uses standard intrinsic-style rotations (`_rotl`, `_rotr`).
 
 ```cpp
 #include <iostream>
-#include <intrin.h> // For _rotl, _rotr, _byteswap_ulong
+#include <intrin.h>
 
 int main()
 {
