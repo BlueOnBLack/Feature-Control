@@ -115,7 +115,7 @@ void DemoTransform() {
     uint32_t resultEncoded = _rotr(_byteswap_ulong(DecodedID ^ 0x74161A4E) ^ 0x8FB23D4F, (255 % 32)) ^ 0x833EA8FF;
     std::cout << "Encoded: " << resultEncoded << (resultEncoded == EncodedID ? " [Match]" : " [Mismatch]") << "\n";
 }
-
+```
 ---
 
 ## 🧪  Demonstration Script
