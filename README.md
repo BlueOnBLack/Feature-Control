@@ -193,14 +193,15 @@ The following demo showcases the full lifecycle of feature manipulation across b
 Clear-Host
 Write-Host
 
-Write-Host 'RTL Runtime Store' -ForegroundColor Green -NoNewline
+# Feature List
+$Feature    = 57517687, 58755790, 59064570
+$UserPath   = "HKLM:\SYSTEM\CurrentControlSet\Control\FeatureManagement\Overrides\8"
+$PolicyPath = 'HKLM:SYSTEM\CurrentControlSet\Policies\Microsoft\FeatureManagement\Overrides'
 
-$Feature = 58755790
-$Feature = @(57517687, 58755790, 59064570)
-
-Set-FeatureConfiguration -Feature $feature -Action Disable -Mode Policy | Out-Null
-Set-FeatureConfiguration -Feature $feature -Action Disable -Mode User   | Out-Null
-Query-KernelFeatureState -Feature $feature -Store Runtime
+Write-Host "RTL, Query Kernel" -ForegroundColor Green -NoNewline
+Set-FeatureConfiguration   -Feature $Feature -Action Enable -Mode User   | Out-Null
+Set-FeatureConfiguration   -Feature $Feature -Action Enable -Mode Policy | Out-Null
+Query-KernelFeatureState -Store Runtime -Feature $Feature
 
 Write-Host "RTL, Mode: Enable`n" -ForegroundColor Green
 
@@ -241,6 +242,14 @@ Set-WnfFeatureConfig   -Store User    -Mode Default -Feature $Feature | Out-Null
 Set-WnfFeatureConfig   -Store Machine -Mode Default -Feature $Feature | Out-Null
 Query-WnfFeatureConfig -Store User    -Feature $Feature
 Query-WnfFeatureConfig -Store Machine -Feature $Feature
+
+Write-Host "FCON, Mode: Enabled" -ForegroundColor Green -NoNewline
+Modify-StagingControls -Feature $Feature -State Enabled | Out-Null
+Get-ChildItem $UserPath -ea 0 | % { Get-ItemProperty $_.PSPath } | Select-Object PSChildName, EnabledState, EnabledStateOptions | Format-Table
+
+Write-Host "FCON, Mode: Variants, Enabled" -ForegroundColor Green
+Modify-StagingControlVariants -Feature $Feature -State Enabled -Variant 2 | Out-Null
+Get-ChildItem $UserPath -ea 0 | % { Get-ItemProperty $_.PSPath } | Select-Object PSChildName, Variant, VariantPayload, VariantPayloadKind | Format-Table
 
 return
 ```
