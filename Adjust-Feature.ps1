@@ -6,10 +6,6 @@ using namespace System.Collections.Generic
 using namespace System.Management.Automation
 using namespace System.Runtime.InteropServices
 
-# Fcon = Feature Configuration library (lives in System32)
-# WNF = Windows Notification Facility
-# RTL = Run-Time Library functions inside ntdll
-
 #region "Misc"
 Function Bor {
     param ([int[]] $Array) 
@@ -189,53 +185,180 @@ function New-InMemoryModule {
 
     return $ModuleBuilder
 }
-function Register-NativeMethods {
-    param (
-        [Parameter(Mandatory)]
-        [Array]$FunctionList,
+#endregion
 
-        # Global defaults
-        $NativeCallConv      = [CallingConvention]::Winapi,
-        $NativeCharSet       = [CharSet]::Unicode,
-        $ImplAttributes      = [MethodImplAttributes]::PreserveSig,
-        $TypeAttributes      = [TypeAttributes]::Public -bor [TypeAttributes]::Abstract -bor [TypeAttributes]::Sealed,
-        $Attributes          = [MethodAttributes]::Public -bor [MethodAttributes]::Static -bor [MethodAttributes]::PinvokeImpl,
-        $CallingConventions  = [CallingConventions]::Standard
-    )
+# Fcon = Feature Configuration library (lives in System32) // Registry Part, On first Boot, using Winload.exe
+# WNF  = Windows Notification Facility                     // LiveOS, Hot-Swap, temporary until next reboot
+# RTL  = Run-Time Library functions inside ntdll           // Kernel Map Layer, lower level as possible
 
-    # Dynamic assembly + module
-    $asmName = New-Object System.Reflection.AssemblyName "DynamicDllHelperAssembly"
-    $asm     = [AppDomain]::CurrentDomain.DefineDynamicAssembly($asmName, [AssemblyBuilderAccess]::Run)
-    $mod     = $asm.DefineDynamicModule("DynamicDllHelperModule")
-    $tb      = $mod.DefineType("NativeMethods", $TypeAttributes)
+#region "Feature, Fcon"
+Function Init-FCON {
 
-    foreach ($func in $FunctionList) {
-        # Per-function overrides
-        $funcCharSet = if ($func.ContainsKey("CharSet")) { 
-            [CharSet]::$($func.CharSet) 
-        } else { 
-            $NativeCharSet 
+    try {
+        $Module = [AppDomain]::CurrentDomain.GetAssemblies()| ? { $_.ManifestModule.ScopeName -eq "FCON" } | select -Last 1
+        $Global:FCON = $Module.GetTypes()[0]
+    }
+    catch {
+        $Module = [AppDomain]::CurrentDomain.DefineDynamicAssembly("null", 1).DefineDynamicModule("FCON", $False).DefineType("null")
+        @(
+            @('null', 'null', [int], @()), # place holder
+            @("ModifyStagingControls",        "fcon.dll", [Int32], @([byte], [Int64], [IntPtr], [byte])),
+            @("ModifyStagingControlVariants", "fcon.dll", [Int32], @([byte], [Int64], [IntPtr], [byte]))
+        ) | % {
+            $Module.DefinePInvokeMethod(($_[0]), ($_[1]), 22, 1, [Type]($_[2]), [Type[]]($_[3]), 1, 3).SetImplementationFlags(128) # Def` 128, fail-safe 0
         }
-
-        $funcCallConv = if ($func.ContainsKey("CallConv")) { 
-            $func.CallConv 
-        } else { 
-            $NativeCallConv 
-        }
-
-        $tb.DefinePInvokeMethod(
-            $func.Name,
-            $func.Dll,
-            $Attributes,
-            $CallingConventions,
-            $func.ReturnType,
-            $func.Parameters,
-            $funcCallConv,
-            $funcCharSet
-        ).SetImplementationFlags($ImplAttributes)
+        $Global:FCON = $Module.CreateType()
     }
 
-    return $tb.CreateType()
+    if (-not ([PSTypeName]'RTL_STAGING_FEATURE_ENTRY').Type) {
+        New-Struct `
+            -Module (New-InMemoryModule -ModuleName RTL_STAGING_FEATURE_ENTRY) `
+            -FullName RTL_STAGING_FEATURE_ENTRY `
+            -StructFields @{
+                FeatureId = New-field 0 UInt32 # 0x00: The ID (e.g., 1234567)
+                State     = New-field 1 Byte   # 0x04: 0=Default, 1=Disabled, 2=Enabled
+                Padding1  = New-field 2 Byte   # 0x05: Aligns to 8 bytes total
+                Padding2  = New-field 3 Byte   # 0x05: Aligns to 8 bytes total
+                Padding3  = New-field 4 Byte   # 0x05: Aligns to 8 bytes total
+            } | Out-Null
+    }
+
+    if (-not ([PSTypeName]'RTL_STAGING_VARIANT_ENTRY').Type) {
+        New-Struct `
+            -Module (New-InMemoryModule -ModuleName RTL_STAGING_VARIANT_ENTRY) `
+            -FullName RTL_STAGING_VARIANT_ENTRY `
+            -StructFields @{
+                FeatureId = New-field 0 UInt32  # 0x00
+                State     = New-field 1 Byte    # 0x04
+                Variant   = New-field 2 Byte    # 
+                Reserved2 = New-field 3 Byte    # 0x06 - 0x0B (6 bytes)
+                Reserved3 = New-field 4 Byte    # 0x06 - 0x0B (6 bytes)
+                Reserved4 = New-field 5 Byte    # 0x06 - 0x0B (6 bytes)
+                Reserved5 = New-field 6 Byte    # 0x06 - 0x0B (6 bytes)
+                Reserved6 = New-field 7 Byte    # 0x06 - 0x0B (6 bytes)
+                Reserved7 = New-field 8 Byte    # 0x06 - 0x0B (6 bytes)
+            } | Out-Null
+    }
+
+}
+function Modify-StagingControls {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)]
+        [UInt32[]]$Feature,
+
+        [ValidateSet("Default", "Disabled", "Enabled")]
+        [string]$State = "Enabled",
+
+        [ValidateSet("Service", "User", "Test")]
+        [string]$Kind = "User",
+
+        [switch]$WipeExisting
+    )
+    
+    if (!$Global:FCON) {
+        Init-FCON
+    }
+
+    # RTL_FEATURE_CONFIGURATION_PRIORITY
+    $KindMap = @{ 
+        "Service"  = 1  ; # 0x4
+        "User"     = 2  ; # 0x8
+        "Test"     = 3 ;  # 0x0C
+    }
+
+    # RTL_FEATURE_ENABLED_STATE
+    $StateMap = @{
+        "Default"  = 0;
+        "Disabled" = 1;
+        "Enabled"  = 2 
+    }
+
+    $Count  = $Feature.Count
+    $Handle = [Marshal]::AllocHGlobal(0x8 * $Count)
+    $Priority = [byte]$KindMap[$Kind]
+    $WipeFlag = [Byte]($(if ($WipeExisting.IsPresent) { 1 } else { 0 }))
+
+    try {
+        for ($i = 0; $i -lt $Count; $i++) {
+            $Entry           = [Activator]::CreateInstance([Type]'RTL_STAGING_FEATURE_ENTRY')
+            $Entry.FeatureId = $Feature[$i]
+            $Entry.State     = [byte]($StateMap[$State])
+            $OffsetPtr       = [intptr]::Add($Handle, ($i * 0x08))
+            [Marshal]::StructureToPtr($Entry, $OffsetPtr, $false)
+        }
+
+        $hr = $Global:FCON::ModifyStagingControls(
+            $Priority, $Count, $Handle, $WipeFlag)
+
+        return $hr
+    }
+    catch {
+        Write-Error "Staging modification failed: $($_.Exception.Message)"
+    }
+    finally {
+        [Marshal]::FreeHGlobal($Handle)
+    }
+}
+function Modify-StagingControlVariants {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)]
+        [UInt32[]]$Feature,
+
+        [ValidateSet("Default", "Disabled", "Enabled")]
+        [string]$State = "Enabled",
+
+        [ValidateSet("Service", "User", "Test")]
+        [string]$Kind = "User",
+
+        [Byte]$Variant = 0x0,
+
+        [switch]$WipeExisting
+    )
+    
+    if (!$Global:FCON) {
+        Init-FCON
+    }
+
+    # RTL_FEATURE_CONFIGURATION_PRIORITY
+    $KindMap = @{ 
+        "Service"  = 1  ; # 0x4
+        "User"     = 2  ; # 0x8
+        "Test"     = 3 ;  # 0x0C
+    }
+
+    # RTL_FEATURE_ENABLED_STATE
+    $StateMap = @{
+        "Default"  = 0;
+        "Disabled" = 1;
+        "Enabled"  = 2 
+    }
+
+    $Count  = $Feature.Count
+    $Handle = [Marshal]::AllocHGlobal(0x0c * $Count)
+    $Priority = [byte]$KindMap[$Kind]
+    $WipeFlag = [Byte]($(if ($WipeExisting.IsPresent) { 1 } else { 0 }))
+
+    try {
+        for ($i = 0; $i -lt $Count; $i++) {
+            $Entry           = [Activator]::CreateInstance([Type]'RTL_STAGING_VARIANT_ENTRY')
+            $Entry.FeatureId = $Feature[$i]
+            $Entry.State     = [byte]$StateMap[$State]
+            $Entry.Variant   = $Variant
+            $OffsetPtr       = [intptr]::Add($Handle, ($i * 0x0C))
+            [Marshal]::StructureToPtr($Entry, $OffsetPtr, $false)
+        }
+
+        return $Global:FCON::ModifyStagingControlVariants(
+            $Priority, $Count, $Handle, $WipeFlag)
+    }
+    catch {
+        Write-Error "Variant modification failed: $($_.Exception.Message)"
+    }
+    finally {
+        [Marshal]::FreeHGlobal($Handle)
+    }
 }
 #endregion
 #region "Feature, RTL"
@@ -275,6 +398,10 @@ $Files | % {
 * Decode Script
 * _byteswap_ulong(__ROL4__(v18 ^ 0x833EA8FF, 255) ^ 0x8FB23D4F) ^ 0x74161A4E;
 
+// fcon.dll, IDA, Search, 833EA8FFh, OR FeatureManagement <Part Of Registry Path> <StorageWriter::??>
+// __int64 __fastcall StorageWriter::GetAllFeatureProperties(__int64 a1, unsigned int a2)
+// __int64 __fastcall StorageWriter::ReadFeaturesForPriority(__int64 a1, unsigned int a2, const unsigned __int16 *a3)
+
 // Winload.exe, IDA, Search, 833EA8FFh, OR FeatureManagement <Part Of Registry Path>
 // __int64 __fastcall FsepInitializeFeatureUsageSubscriptions(__int64 a1, unsigned int a2, unsigned int **a3, __int64 *a4)
 // __int64 __fastcall FsepPopulateFeatureConfigurationsForPolicyKey( int a1, unsigned int a2, __int64 *a3, __int64 a4, _DWORD *a5)
@@ -283,19 +410,22 @@ $Files | % {
 * Encode Script
 * __ROR4__(_byteswap_ulong(v18 ^ 0x74161A4E) ^ 0x8FB23D4F, 255) ^ 0x833EA8FF);
 
+// fcon.dll, IDA, Search, 833EA8FFh, OR FeatureManagement <Part Of Registry Path> <StorageWriter::??>
+// __int64 __fastcall StorageWriter::DeletePolicyFeatureState(int a1)
+// __int64 __fastcall StorageWriter::WritePolicyFeatureState(int a1, int a2)
+// __int64 __fastcall StorageWriter::DeleteFeatureState(unsigned int a1, int a2)
+// __int64 __fastcall StorageWriter::OpenFeatureSubscriptionsKey(int a1, HKEY *a2)
+// __int64 __fastcall StorageWriter::OpenSubscriptionsKeyForRead(int a1, HKEY *a2, const unsigned __int16 *a3)
+// __int64 __fastcall StorageWriter::CreateFeatureSubscriptionsKey(int a1, HKEY *a2, const unsigned __int16 *a3)
+// __int64 __fastcall StorageWriter::CreateFeatureKey(unsigned int a1, int a2, HKEY *a3, const unsigned __int16 *a4)
+// __int64 __fastcall StorageWriter::OpenFeatureKeyForRead(unsigned int a1, int a2, HKEY *a3, const unsigned __int16 *a4)
+// __int64 __fastcall StorageWriter::DeleteFeatureSubscriptions(struct _RTL_FEATURE_USAGE_SUBSCRIPTION_DETAILS *a1, unsigned __int64 a2)
+
 // CmService.dll, IDA, Search, 833EA8FFh, OR FeatureManagement <Part Of Registry Path>
 // __int64 __fastcall StorageWriter::CreateFeatureKey(unsigned int a1, int a2, HKEY *a3, const unsigned __int16 *a4)
 
 // MitigationClient.dll, IDA, Search, 833EA8FFh, OR FeatureManagement <Part Of Registry Path>
 // __int64 __fastcall StorageWriter::OpenFeatureKeyForRead(unsigned int a1, int a2, HKEY *a3)
-
-// fcon.dll, IDA, Search, 833EA8FFh, OR FeatureManagement <Part Of Registry Path>
-// __int64 __fastcall StorageWriter::DeletePolicyFeatureState(int a1)
-// __int64 __fastcall StorageWriter::WritePolicyFeatureState(int a1, int a2)
-// __int64 __fastcall StorageWriter::DeleteFeatureState(unsigned int a1, int a2)
-// __int64 __fastcall StorageWriter::OpenFeatureSubscriptionsKey(int a1, HKEY *a2)
-// __int64 __fastcall StorageWriter::CreateFeatureSubscriptionsKey(int a1, HKEY *a2, const unsigned __int16 *a3)
-// __int64 __fastcall StorageWriter::DeleteFeatureSubscriptions(struct _RTL_FEATURE_USAGE_SUBSCRIPTION_DETAILS *a1, unsigned __int64 a2)
 
 // C+ Demo using <_rotr, _rotl> instead of <__ROL4__, __ROR4__>
 // Decode Script, _byteswap_ulong(__ROL4__(v18 ^ 0x833EA8FF, 255) ^ 0x8FB23D4F) ^ 0x74161A4E; // Winload.exe
@@ -754,7 +884,7 @@ function Write-FeatureData {
     $structure.Operation           = $Operation
 
     $ptr = ([IntPtr]::Add($UpdatePackage, ($BaseOffset + (0x20 * $Index))))
-    [marshal]::StructureToPtr($structure, $ptr, $true)
+    [marshal]::StructureToPtr($structure, $ptr, $false)
 }
 function Obfuscate-FeatureId {
     param($featureId)
@@ -822,7 +952,7 @@ function Set-FeatureConfiguration {
         $header.PreviousStamp = $PreviousStamp
         $header.ConfigurationType = $type
         $header.FeatureCount = $Count
-        [Marshal]::StructureToPtr($header, $updatePackage, $true)
+        [Marshal]::StructureToPtr($header, $updatePackage, $false)
 
         $idx = -1;
         foreach ($f in $Feature) {
@@ -925,17 +1055,28 @@ function Set-FeatureConfiguration {
             $PolicyPath = "HKLM:\SYSTEM\CurrentControlSet\Policies\Microsoft\FeatureManagement\Overrides"
 
             # FeatureConfigurationPriorityUser  = 0x8
-            $UserPath   = "HKLM:\SYSTEM\CurrentControlSet\Control\FeatureManagement\Overrides\8\$($ObfuscateId)"
+            $UserPath   = "HKLM:\SYSTEM\CurrentControlSet\Control\FeatureManagement\Overrides\$Priority\$($ObfuscateId)"
 
             if ($Action -eq "Reset") {
                 try {
-                    
-                    if ($Log) {
-                        Write-Warning "Remove Path: $UserPath"
+                    # As Per, fcon.dll, StorageWriter::DeleteFeatureState, Safe Check
+                    if ($Priority -gt 15 -or @(0, 7, 15) -contains $Priority) {
+                        if ($Log) {
+                           Write-Warning "Priority $Priority is system-protected. Skipping." 
+                        }
+                        continue
                     }
-                    Remove-Item -Path $UserPath -Recurse -Force -ErrorAction SilentlyContinue
 
-                    # Also, remove any remains's if exist, in Policy Key
+                    # fcon.dll, __int64 __fastcall StorageWriter::DeleteFeatureState(unsigned int a1, int a2)
+                    $SafePriorities = 1..6 + 8..9 + 11..14
+                    if ($Priority -in $SafePriorities -and (Test-Path $UserPath)) { 
+                        if ($Log) {
+                            Write-Warning "Remove Path: $UserPath"
+                        }
+                        Remove-Item -Path $UserPath -Recurse -Force 
+                    }
+
+                    # fcon.dll, __int64 __fastcall StorageWriter::DeletePolicyFeatureState(int a1)
                     if ($Log) {
                       Write-Warning "Remove Path: $PolicyPath, $ObfuscateId"
                     }
@@ -943,6 +1084,7 @@ function Set-FeatureConfiguration {
                 }
                 catch {}
             }
+
             if ($Action -match "Enable|Disable") {
                 $targetPath = if ($Mode -eq "Policy") { $PolicyPath } else { $UserPath }
                 if (!(Test-Path $targetPath)) {
@@ -1363,36 +1505,21 @@ function Init-WNF {
             } | Out-Null
     }
 
-    $functions = @(
-        @{
-            Name       = "NtQueryWnfStateData";
-            Dll        = "ntdll.dll";
-            ReturnType = [Int32]; # NTSTATUS
-            Parameters = [Type[]]@(
-                [UInt64].MakeByRefType(), # WNF State Name
-                [Int64],                  # TypeId (optional)
-                [Int64],                  # Explicit Scope
-                [UInt32].MakeByRefType(), # ChangeStamp
-                [IntPtr],                 # Buffer
-                [UInt32].MakeByRefType()  # BufferSize
-            )
-        },
-        @{
-            Name       = "NtUpdateWnfStateData";
-            Dll        = "ntdll.dll";
-            ReturnType = [Int32]; # NTSTATUS
-            Parameters = [Type[]]@(
-                [UInt64].MakeByRefType(), # WNF State Name
-                [IntPtr],                 # Buffer
-                [UInt32],                 # Length
-                [UInt32].MakeByRefType(), # TypeId
-                [UInt64],                 # Nothing
-                [UInt32],                 # ChangeStamp
-                [UInt32]                  # Optional
-            )
+    try {
+        $Module = [AppDomain]::CurrentDomain.GetAssemblies()| ? { $_.ManifestModule.ScopeName -eq "WNF" } | select -Last 1
+        $Global:WNF = $Module.GetTypes()[0]
+    }
+    catch {
+        $Module = [AppDomain]::CurrentDomain.DefineDynamicAssembly("null", 1).DefineDynamicModule("WNF", $False).DefineType("null")
+        @(
+            @('null', 'null', [int], @()), # place holder
+            @( "NtQueryWnfStateData",  "ntdll.dll", [Int32], @([UInt64].MakeByRefType(), [Int64], [Int64], [UInt32].MakeByRefType(), [IntPtr], [UInt32].MakeByRefType())),
+            @( "NtUpdateWnfStateData", "ntdll.dll", [Int32], @([UInt64].MakeByRefType(), [IntPtr], [UInt32], [UInt32].MakeByRefType(), [UInt64], [UInt32], [UInt32]))
+        ) | % {
+            $Module.DefinePInvokeMethod(($_[0]), ($_[1]), 22, 1, [Type]($_[2]), [Type[]]($_[3]), 1, 3).SetImplementationFlags(128) # Def` 128, fail-safe 0
         }
-    )
-    $Global:wnf = Register-NativeMethods $functions
+        $Global:WNF = $Module.CreateType()
+    }
 }
 function Get-WnfObjectFromPtr {
     param (
@@ -1586,9 +1713,7 @@ function Set-WnfFeatureConfig {
         $update.FeatureUsageTriggerCount = 0
         $update.SessionProperties = 0
         $update.Properties = 0
-        [marshal]::StructureToPtr(
-            $update, $Buffer, $true
-        )
+        [marshal]::StructureToPtr($update, $Buffer, $false)
 
         for ($i=0; $i -lt $Count; $i++) {
             $featureEntry = [Activator]::CreateInstance([Type]'WNF_FEATURE_ENTRY')
@@ -1598,7 +1723,7 @@ function Set-WnfFeatureConfig {
             [Marshal]::StructureToPtr(
                 $featureEntry, 
                 ([IntPtr]::Add($Buffer, 16 + ($i * 12))), 
-                $true
+                $false
             )
         }
 
@@ -1681,9 +1806,16 @@ Clear-Host
 Write-Host
 
 # Feature List
-$Feature = 57517687, 58755790, 59064570
+$Feature    = 57517687, 58755790, 59064570
+$UserPath   = "HKLM:\SYSTEM\CurrentControlSet\Control\FeatureManagement\Overrides\8"
+$PolicyPath = 'HKLM:SYSTEM\CurrentControlSet\Policies\Microsoft\FeatureManagement\Overrides'
 
-Write-Host "RTL, Mode: Enable" -ForegroundColor Green -NoNewline
+Write-Host "RTL, Query Kernel" -ForegroundColor Green -NoNewline
+Set-FeatureConfiguration   -Feature $Feature -Action Enable -Mode User   | Out-Null
+Set-FeatureConfiguration   -Feature $Feature -Action Enable -Mode Policy | Out-Null
+Query-KernelFeatureState -Store Runtime -Feature $Feature
+
+Write-Host "RTL, Mode: Enable`n" -ForegroundColor Green
 
 Set-FeatureConfiguration   -Feature $Feature -Action Enable -Mode User   | Out-Null
 Set-FeatureConfiguration   -Feature $Feature -Action Enable -Mode Policy | Out-Null
@@ -1722,5 +1854,13 @@ Set-WnfFeatureConfig   -Store User    -Mode Default -Feature $Feature | Out-Null
 Set-WnfFeatureConfig   -Store Machine -Mode Default -Feature $Feature | Out-Null
 Query-WnfFeatureConfig -Store User    -Feature $Feature
 Query-WnfFeatureConfig -Store Machine -Feature $Feature
+
+Write-Host "FCON, Mode: Enabled" -ForegroundColor Green -NoNewline
+Modify-StagingControls -Feature $Feature -State Enabled | Out-Null
+Get-ChildItem $UserPath -ea 0 | % { Get-ItemProperty $_.PSPath } | Select-Object PSChildName, EnabledState, EnabledStateOptions | Format-Table
+
+Write-Host "FCON, Mode: Variants, Enabled" -ForegroundColor Green
+Modify-StagingControlVariants -Feature $Feature -State Enabled -Variant 2 | Out-Null
+Get-ChildItem $UserPath -ea 0 | % { Get-ItemProperty $_.PSPath } | Select-Object PSChildName, Variant, VariantPayload, VariantPayloadKind | Format-Table
 
 return
