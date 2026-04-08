@@ -10,21 +10,22 @@ This tool merges the logic of **ViVeTool** and **Mach2**, providing a unified in
 The script operates across the entire Windows Feature Management stack, ensuring changes are either permanent or instantaneous.
 
 ### 1. The Fcon Layer (Registry Store)
-This is the persistent configuration store. It defines the "Desired State" for features. While user-mode tools often surface this in the Software hive, the true system-level overrides reside in the System hive to be accessible during early boot.
+This is the static "Desired State" database. It holds the encoded configuration data that defines which features are toggled for the next system session.
 
-* **Store Types:** User (HKCU) and System (HKLM).
-* **Mechanism:** Writes structured feature override data. For system-wide impact, it targets:
+* **Store Types:** System (HKLM) and User (HKCU).
+* **Mechanism:** Writes structured data (Feature IDs and states) to:
   HKLM\SYSTEM\CurrentControlSet\Control\FeatureManagement\Overrides
-* **Impact:** Persistent. These entries act as the static database that the boot loader queries to determine which features should be initialized as "On" or "Off" before the OS is fully functional.
+* **Impact:** Persistent. These entries remain "cold" on the disk until the boot loader initiates the retrieval process.
 
 ### 2. The RTL Layer (Boot Loader & Kernel Initialization)
-This is the execution bridge. It translates the static Fcon Registry entries into the active Kernel memory state.
+This is the active translation layer. It is responsible for parsing the Registry and promoting those settings into live Kernel memory.
 
 * **Store Types:** Boot Configuration and Kernel Non-Paged Pool.
-* **Mechanism:** 1. Winload (winload.exe/efi) reads the Overrides from the SYSTEM registry hive during the Pre-Boot phase.
-  2. It evaluates these against the hardware/policy and passes the "Enabled" list to ntoskrnl.exe.
-  3. At runtime, RtlSetFeatureConfigurations can be used by system services to modify the live Kernel state or update the Registry for the next boot.
-* **Impact:** This layer ensures that even BOOT_START drivers operate with the correct feature set. It is the high-priority enforcement point that bridges disk-based settings to silicon-based execution.
+* **Mechanism:** 1. Early Boot: winload.exe (or efi) invokes FsepPopulateFeatureConfigurationsForPriorityKey and FsepPopulateFeatureConfigurationsForPolicyKey.
+  2. Logic: These functions decrypt the Feature IDs from the Registry, evaluate their priority levels (e.g., Policy vs. Default), and consolidate them into a "Boot Feature List."
+  3. Hand-off: winload passes this processed list to ntoskrnl.exe.
+  4. Runtime: Once the OS is live, RtlSetFeatureConfigurations can be called to modify the Kernel’s memory-resident state or commit new overrides back to the Registry for subsequent boots.
+* **Impact:** High priority. This ensures that the Feature Manager (Fm) state is initialized before any drivers or services start, allowing the Kernel to mask or unmask functionality at the lowest level.
 
 ### 3. The WNF Layer (Live Notifications)
 The "Modern" store used for A/B testing (Velocity).
