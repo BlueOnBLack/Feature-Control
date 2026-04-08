@@ -10,18 +10,18 @@ This tool merges the logic of **ViVeTool** and **Mach2**, providing a unified in
 The script operates across the entire Windows Feature Management stack, ensuring changes are either permanent or instantaneous.
 
 ### 1. The Fcon Layer (Registry Store)
-This is the primary persistent store for feature overrides. It serves as the "Source of Truth" that the system consults during the boot process and service initialization.
+This is the primary persistent store for feature overrides. It serves as the static "Source of Truth" that defines the intended state of the system.
 
 * **Store Types:** User (HKCU) and Policy (HKLM).
 * **Mechanism:** Uses RtlSetFeatureConfigurations to write structured data into the Software\Microsoft\Windows\CurrentVersion\Control Panel\FeatureManagement\Overrides Registry keys.
-* **Impact:** Changes are permanent until explicitly reverted. While the Registry write is instant, some system services may require a restart to re-read these keys and apply the changes.
+* **Impact:** Persistent across reboots. These entries remain dormant in the Registry until the next boot cycle or until a manual refresh is triggered.
 
-### 2. The RTL Layer (Kernel Memory & Runtime)
-This layer manages the active state of features within the Windows Kernel and system-level components. It bridges the gap between static Registry settings and the live environment.
+### 2. The RTL Layer (Boot Loader & Kernel Initialization)
+This is the bridge where Registry settings become active system behavior. It is responsible for translating static Registry data into the live Kernel state.
 
-* **Store Types:** Kernel-mode memory structures and System-wide Policy.
-* **Mechanism:** It utilizes RtlSetFeatureConfigurations not just for Registry persistence, but to commit configurations directly to Kernel Memory. It also handles the evaluation of "Feature Usage" requirements before a feature is toggled.
-* **Impact:** This is the high-priority enforcement layer. If a feature is toggled here, it overrides default system behaviors. Because it touches Kernel memory, it ensures that low-level drivers and the NTOSKRNL are aware of the feature state.
+* **Store Types:** Kernel Memory (Non-Paged Pool) and System Policy.
+* **Mechanism:** During the boot process, winload.exe (or winload.efi) reads the FeatureManagement Registry keys. It loads these configurations into memory and passes them to the Kernel (ntoskrnl.exe). At runtime, RtlSetFeatureConfigurations can also be used to update the Kernel's active memory state directly.
+* **Impact:** High priority. Because winload handles this transition, features can be enabled or disabled at the lowest level of the OS. This ensures that even BOOT_START drivers and core kernel subsystems respect the overrides.
 
 ### 3. The WNF Layer (Live Notifications)
 The "Modern" store used for A/B testing (Velocity).
