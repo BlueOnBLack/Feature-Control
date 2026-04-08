@@ -674,6 +674,13 @@ public static extern int RtlQueryFeatureConfiguration(
     out RTL_FEATURE_CONFIGURATION featureConfiguration
 );
 
+// fcon.dll
+// __int64 __fastcall StagingControls_EnumerateFeatures__lambda_025e1f4f593c8987aee57b4ee711a6c5____(_BYTE ***a1)
+
+LODWORD(v28) = *(v8 - 1);
+v15 = v8[5];
+HIDWORD(v28) = v12 & 0xF | (16 * (v8[1] & 3 | (4 * (v8[2] & 1 | (4 * (((v8[4] & 3) << 6) | v8[3] & 0x3F))))));
+
 // Ntoskrnl.exe, IDA, Local Types
 00000000 _RTL_FEATURE_CONFIGURATION struc ; (sizeof=0xC, align=0x4)
 00000000 FeatureId       dd ?        ; 0x0, 4 bytes — Feature identifier
@@ -741,7 +748,7 @@ enum _RTL_FEATURE_ENABLED_STATE_OPTIONS
 {
     FeatureEnabledStateOptionsNone = 0,
     FeatureEnabledStateOptionsWexpConfig = 1
-}; 
+};
 #>
 Function Init-RTL {
     
@@ -856,12 +863,14 @@ Function Init-RTL {
             @('RtlSetFeatureConfigurations',  'ntdll.dll', [Int32], @([Int].MakeByRefType(), [Int32], [IntPtr], [Int])),
             @('RtlCreateBootStatusDataFile',  'ntdll.dll', [Int32], @([IntPtr])),
             @('RtlQueryFeatureConfiguration', 'ntdll.dll', [Int32], @([UInt32], [UInt32], [UInt64].MakeByRefType(), [IntPtr])),
+            @('NtQuerySystemInformationEx',   'ntdll.dll', [Int32], @([Int32], [IntPtr], [Int32], [IntPtr], [Int32], [IntPtr])),
+            @('ZwMapViewOfSection',           'ntdll.dll', [Int32], @([IntPtr], [IntPtr], [IntPtr].MakeByRefType(), [UIntPtr], [UIntPtr], [Int64].MakeByRefType(), [IntPtr].MakeByRefType(), [Int32], [Int32], [Int32])),
+            @('ZwUnmapViewOfSection',         'ntdll.dll', [Int32], @([IntPtr], [IntPtr])),
+            @('RtlPublishWnfStateData',       'ntdll.dll', [Int32], @([UInt64], [Int64], [Int64], [Int64])),
+            @('NtClose',                      'ntdll.dll', [Int32], @([IntPtr])),
             @('RtlQueryFeatureConfigurationChangeStamp', 'ntdll.dll', [Int32], @()),
-            @('RtlQueryAllFeatureConfigurations', 'ntdll.dll', [Int32], @([Int32], [UInt64].MakeByRefType(), [IntPtr], [Int32].MakeByRefType())),
-            @('NtQuerySystemInformationEx', 'ntdll.dll', [Int32], @([Int32], [IntPtr], [Int32], [IntPtr], [Int32], [IntPtr])),
-            @('ZwMapViewOfSection',         'ntdll.dll', [Int32], @([IntPtr], [IntPtr], [IntPtr].MakeByRefType(), [UIntPtr], [UIntPtr], [Int64].MakeByRefType(), [IntPtr].MakeByRefType(), [Int32], [Int32], [Int32])),
-            @('ZwUnmapViewOfSection',       'ntdll.dll', [Int32], @([IntPtr], [IntPtr])),
-            @('NtClose',                    'ntdll.dll', [Int32], @([IntPtr]))
+            @('RtlQueryAllFeatureConfigurations', 'ntdll.dll', [Int32], @([Int32], [UInt64].MakeByRefType(), [IntPtr], [Int32].MakeByRefType()))
+
         ) | % {
             $Module.DefinePInvokeMethod(($_[0]), ($_[1]), 22, 1, [Type]($_[2]), [Type[]]($_[3]), 1, 3).SetImplementationFlags(128) # Def` 128, fail-safe 0
         }
@@ -932,8 +941,6 @@ function Set-FeatureConfiguration {
     }
 
     $results = $False
-    $BootPending = 0x01
-    $ConfigurationState = 0x11
     $type = if ($Store -eq "Boot") { 0x00 } else { 0x01 }
     $Priority = if ($Mode -eq "Policy") {  0x0a } else { 0x08 }
     $OperationType = if ($Action -match "Enable|Disable") { 0x01 -bor 0x02 } else { 0x04 }
@@ -1115,15 +1122,29 @@ function Set-FeatureConfiguration {
             }
         }
 
+        # As Seen in fcon.dll, __int64 __fastcall StagingControls_SetFeatureEnabledState
+        # Called ofter Set regitry value, & After call ZwSetSystemInformation
+
+        $WnfPendingChange = [UInt64]0x0F890D2BA3BC2075
+        $RTL::RtlPublishWnfStateData($WnfPendingChange, 0, 0, 0) | Out-Null
+
+        # Instruction as found in,
+        # Vive Tool, Consumer_ESU_Enrollment.ps1
+
+        $BootPending = 0x01
+        $ConfigurationState = 0x11
+
         [Uint32]$CurState = 0;
-        $ret = $RTL::RtlGetSystemBootStatus(
+        $hr = $RTL::RtlGetSystemBootStatus(
             $ConfigurationState,
             ([ref]$CurState),
             0x04, [IntPtr]::Zero
         )
-        if ($ret -eq 0xC0000034) {
-            $ret = $RTL::RtlCreateBootStatusDataFile([IntPtr]::Zero)
-            if ($ret -ne 0) {
+
+        # Object Name not found. ERROR
+        if ($hr -eq 0xC0000034) {
+            $hr = $RTL::RtlCreateBootStatusDataFile([IntPtr]::Zero)
+            if ($hr -ne 0x0) {
                 Write-warning "Failed calling RtlCreateBootStatusDataFile: Code {$ret}"
                 return $results
             }
