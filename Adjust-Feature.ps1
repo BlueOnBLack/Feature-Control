@@ -210,6 +210,7 @@ Function Init-FCON {
         $Global:FCON = $Module.CreateType()
     }
 
+    # Define an header for RTL_STAGING_FEATURE_ENTRY
     if (-not ([PSTypeName]'RTL_STAGING_FEATURE_ENTRY').Type) {
         New-Struct `
             -Module (New-InMemoryModule -ModuleName RTL_STAGING_FEATURE_ENTRY) `
@@ -223,6 +224,7 @@ Function Init-FCON {
             } | Out-Null
     }
 
+    # Define an header for RTL_STAGING_VARIANT_ENTRY
     if (-not ([PSTypeName]'RTL_STAGING_VARIANT_ENTRY').Type) {
         New-Struct `
             -Module (New-InMemoryModule -ModuleName RTL_STAGING_VARIANT_ENTRY) `
@@ -230,7 +232,7 @@ Function Init-FCON {
             -StructFields @{
                 FeatureId = New-field 0 UInt32  # 0x00
                 State     = New-field 1 Byte    # 0x04
-                Variant   = New-field 2 Byte    # 
+                Variant   = New-field 2 Byte    # 0x05
                 Reserved2 = New-field 3 Byte    # 0x06 - 0x0B (6 bytes)
                 Reserved3 = New-field 4 Byte    # 0x06 - 0x0B (6 bytes)
                 Reserved4 = New-field 5 Byte    # 0x06 - 0x0B (6 bytes)
@@ -580,6 +582,10 @@ typedef enum _SYSTEM_FEATURE_CONFIGURATION_SECTION_TYPE {
 // __int64 __fastcall RtlSetFeatureConfigurations(_QWORD *a1, int a2, const void *a3, unsigned __int64 a4)
 // v8 = 32i64 * (unsigned int)a4;
 
+// fcon.dll
+// __int64 __fastcall StorageWriter::WriteFeatureStates(struct _RTL_FEATURE_CONFIGURATION_UPDATE *a1, unsigned __int64 a2, char a3)
+// (_DWORD *)i = RTL_FEATURE_CONFIGURATION_UPDATE At offset 0x08
+
 // ntoskrnl.exe, Function RtlpFcUpdateFeature
 // __int64 __fastcall RtlpFcUpdateFeature(__int64 a1, __int64 a2)
 {
@@ -796,17 +802,20 @@ Function Init-RTL {
             -Module (New-InMemoryModule -ModuleName RTL_FEATURE_CONFIGURATION_UPDATE) `
             -FullName RTL_FEATURE_CONFIGURATION_UPDATE `
             -StructFields @{
-                FeatureId           = New-field 0  UInt32   # 0x00
-                Priority            = New-field 1  Int32    # 0x04
-                EnabledState        = New-field 2  Int32    # 0x08
-                PackedOptions       = New-field 3  Int32    # 0x0C (The mask 0x40 source)
-                EnabledStateOptions = New-field 4  Byte     # 0x10 (The byte read at a2+16)
-                reserved1           = New-field 5  byte     # 0x10 ++
-                reserved2           = New-field 6  byte     # 0x10 ++
-                reserved3           = New-field 7  byte     # 0x10 ++
-                VariantFlags        = New-field 8  Int32    # 0x14 (The bits at a2+20)
-                VariantPayload      = New-field 9 UInt32    # 0x18 (The value at a2+24)
-                Operation           = New-field 10 Int32    # 0x1C (The v2 check at a2+28)
+                FeatureId           = New-field 00  UInt32   # 0x00
+                Priority            = New-field 01  Int32    # 0x04
+                EnabledState        = New-field 02  Int32    # 0x08
+                PackedOptions       = New-field 03  Int32    # 0x0C (The mask 0x40 source)
+                EnabledStateOptions = New-field 04  Byte     # 0x10 (The byte read at a2+16)
+                reserved1           = New-field 05  byte     # 0x10 ++
+                reserved2           = New-field 06  byte     # 0x10 ++
+                reserved3           = New-field 07  byte     # 0x10 ++
+                Variant             = New-field 08  Byte     # 0x14 (The bits at a2+20)
+                reserved4           = New-field 09  Byte     # 0x14 (The bits at a2+20)
+                Kernel_Flags        = New-field 10  Byte     # 0x14 (The bits at a2+20)
+                reserved5           = New-field 11  Byte     # 0x14 (The bits at a2+20)
+                VariantPayload      = New-field 12 UInt32    # 0x18 (The value at a2+24)
+                Operation           = New-field 13 Int32    # 0x1C (The v2 check at a2+28)
             } | Out-Null
     }
 
@@ -822,13 +831,14 @@ Function Init-RTL {
                 FlagsRaw            = New-field 1  String
                 Priority            = New-field 2  UInt32
                 EnabledState        = New-field 3  String
-                IsWexpConfiguration = New-field 4  Boolean
-                HasSubscriptions    = New-field 5  Boolean
-                Variant             = New-field 6  UInt32
-                VariantPayloadKind  = New-field 7  UInt32
-                VariantPayload      = New-field 8  String
-                Reserved            = New-field 9  UInt32
-                EnabledStateOptions = New-field 10 UInt32
+                EnabledStateRaw     = New-field 4  String
+                IsWexpConfiguration = New-field 5  Boolean
+                HasSubscriptions    = New-field 6  Boolean
+                Variant             = New-field 7  UInt32
+                VariantPayloadKind  = New-field 8  UInt32
+                VariantPayload      = New-field 9  String
+                Reserved            = New-field 10 UInt32
+                EnabledStateOptions = New-field 11 UInt32
             } | Out-Null
     }
 
@@ -867,7 +877,7 @@ function Write-FeatureData {
         [int]     $Priority = 0x0,
         [int]     $EnabledState = 0x0,
         [int]     $EnabledStateOptions = 0x0,
-        [int]     $VariantFlags = 0x0,
+        [int]     $Variant = 0x0,
         [int]     $VariantPayloadKind = 0x0,
         [int]     $VariantPayload = 0x0,
         [int]     $Operation = 0x0
@@ -877,9 +887,9 @@ function Write-FeatureData {
     $structure.FeatureId           = $FeatureId
     $structure.Priority            = $Priority
     $structure.EnabledState        = $EnabledState
-    $structure.PackedOptions       = ($VariantPayloadKind -band 0x1) -shl 6
+    $structure.PackedOptions       = [int]($VariantPayloadKind -band 0x1)
     $structure.EnabledStateOptions = [byte]$EnabledStateOptions
-    $structure.VariantFlags        = $VariantFlags
+    $structure.Variant             = $Variant
     $structure.VariantPayload      = [uint32]$VariantPayload
     $structure.Operation           = $Operation
 
@@ -956,7 +966,6 @@ function Set-FeatureConfiguration {
 
         $idx = -1;
         foreach ($f in $Feature) {
-            $ConfigObj = $null
             if ($Action -eq "Reset") {
                 $FeatureObj = $null
                 $FeatureObj = Query-FeatureConfiguration -Feature $f
@@ -964,19 +973,19 @@ function Set-FeatureConfiguration {
                     $Priority = $FeatureObj.Priority
                 }
             }
-            if ($ConfigObj) {
+            if ($FeatureObj) {
                 Write-FeatureData `
                     -Index (++$idx) `
                     -BaseOffset $BaseSize `
                     -UpdatePackage $updatePackage `
-                    -FeatureId $ConfigObj.FeatureId `
-                    -Priority $ConfigObj.Priority `
-                    -EnabledState $ConfigObj.EnabledState `
-                    -EnabledStateOptions $ConfigObj.EnabledStateOptions `
-                    -VariantFlags $ConfigObj.Variant `
-                    -VariantPayloadKind $ConfigObj.VariantPayloadKind `
-                    -VariantPayload $ConfigObj.VariantPayload `
-                    -Operation $ConfigObj.Operation
+                    -FeatureId $FeatureObj.FeatureId `
+                    -Priority $FeatureObj.Priority `
+                    -EnabledState $FeatureObj.EnabledStateRaw `
+                    -EnabledStateOptions $FeatureObj.EnabledStateOptions `
+                    -Variant $FeatureObj.Variant `
+                    -VariantPayloadKind $FeatureObj.VariantPayloadKind `
+                    -VariantPayload $FeatureObj.VariantPayload `
+                    -Operation $OperationType
             } else {
                 Write-FeatureData `
                     -Index (++$idx) `
@@ -1168,6 +1177,7 @@ function Get-FeatureObjectFromPtr {
     $Info.FlagsRaw            = '0x{0:X8}' -f $flags
     $Info.Priority            = $flags -band 0xF
     $Info.EnabledState        = $EnabledState
+    $Info.EnabledStateRaw     = $rawState
     $Info.IsWexpConfiguration = [bool](($flags -shr 6) -band 0x1)
     $Info.HasSubscriptions    = [bool](($flags -shr 7) -band 0x1)
     $Info.Variant             = ($flags -shr 8) -band 0x3F
