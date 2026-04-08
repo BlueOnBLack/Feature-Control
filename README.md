@@ -10,27 +10,25 @@ This tool merges the logic of **ViVeTool** and **Mach2**, providing a unified in
 The script operates across the entire Windows Feature Management stack, ensuring changes are either permanent or instantaneous.
 
 ### 1. The Fcon Layer (Persistent Storage & Intent)
-This is the "Cold" preparation phase. It ensures that the system "remembers" the feature state. 
+This is the static "Source of Truth" on the disk. It ensures that configurations survive a power cycle and are available for the very next boot sequence.
 
-* **Location:** User-mode (fcon.dll).
+* **Location:** User-mode (fcon.dll) and Registry Hives.
 * **Mechanism:** - StorageWriter::WriteFeatureStates: Encodes Feature IDs and states into the Registry.
-  - StorageWriter::FlushFeatureOverrides: Commits the Registry Hive to disk.
-* **Transition Logic:** Once the Registry is updated, this layer initiates the call to the RTL Layer (RtlSetFeatureConfigurations) to synchronize the disk state with the active Kernel state.
+  - StorageWriter::FlushFeatureOverrides: Commits the Registry Hive to the physical disk.
+* **Transition Logic:** Once the Registry is updated, this layer initiates a call to the RTL Layer (RtlSetFeatureConfigurations) to synchronize the current session. Simultaneously, it leaves the data on disk for winload.exe to find during the next startup.
 
-### 2. The RTL Layer (Live Kernel Synchronization & SYSCALL)
-This is the "Hot" enforcement phase where the intent from the Fcon layer is pushed into the CPU's execution ring.
+### 2. The RTL Layer (Boot Initialization & Live Kernel SYSCALL)
+This is the active enforcement layer that bridges the gap between Registry data and CPU execution. It operates in two distinct phases:
 
-* **Location:** Transition from fcon.dll -> ntdll.dll -> ntoskrnl.exe.
-* **Mechanism:** - The Call: fcon.dll executes RtlSetFeatureConfigurations.
-  - The SYSCALL: This function triggers a system call, crossing the boundary from User Mode (Ring 3) to Kernel Mode (Ring 0).
-  - Kernel Execution: The Feature Manager (Fmp) inside ntoskrnl.exe receives the update and physically modifies the feature bitmask in the Kernel's Non-Paged Pool memory.
-* **Impact:** Immediate Enforcement. This part updates the kernel. Once this returns, the feature is live for all drivers and core system subsystems.
+* **Phase A (The Boot Load):** During the pre-boot sequence, winload.exe (or winload.efi) uses the Fsep (Feature Selection) functions to read the SYSTEM Registry hive. It decrypts the Feature IDs and prepares the "Boot Feature List" to be passed to ntoskrnl.exe. This ensures features are active before the first driver even loads.
+* **Phase B (The Live Update):** At runtime, fcon.dll executes RtlSetFeatureConfigurations, which triggers a SYSCALL. This crosses the boundary from User Mode (Ring 3) to Kernel Mode (Ring 0). The Feature Manager (Fmp) inside ntoskrnl.exe receives the update and physically modifies the feature bitmask in the Kernel's Non-Paged Pool memory.
+* **Impact:** High-priority enforcement. This part updates the kernel state both at startup and in real-time.
 
 ### 3. The WNF Layer (Subsystem Notification)
-The "Broadcast" phase that tells User-Mode applications to catch up with the Kernel.
+The "Modern" broadcast layer that tells User-Mode applications that the Kernel and Registry states have changed.
 
 * **Mechanism:** RtlPublishWnfStateData(WNF_FCON_PENDING_FEATURE_CONFIGS_CHANGED).
-* **Impact:** Notifies processes like explorer.exe that the Kernel and Registry have finished their update, allowing the UI to refresh without a restart.* **Impact:** Immediate UI/UX Update. Once the Kernel (RTL Layer) and Registry (Fcon Layer) are updated, WNF tells processes like 'explorer.exe' to refresh their state so the user sees the change instantly.
+* **Impact:** Triggers immediate notifications to running processes (e.g., explorer.exe) to update the UI without a restart.
 
 ---
 
