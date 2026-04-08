@@ -9,30 +9,28 @@ This tool merges the logic of **ViVeTool** and **Mach2**, providing a unified in
 
 The script operates across the entire Windows Feature Management stack, ensuring changes are either permanent or instantaneous.
 
-### 1. The Fcon Layer (Registry Store)
-This is the static "Desired State" database. It holds the encoded configuration data that defines which features are toggled for the next system session.
+### 1. The Fcon Layer (Persistent Storage)
+The foundation of the feature management system. It ensures that configurations survive a power cycle.
 
-* **Store Types:** System (HKLM) and User (HKCU).
-* **Mechanism:** Writes structured data (Feature IDs and states) to:
-  HKLM\SYSTEM\CurrentControlSet\Control\FeatureManagement\Overrides
-* **Impact:** Persistent. These entries remain "cold" on the disk until the boot loader initiates the retrieval process.
+* **Store Types:** System (HKLM) and User (HKCU) Registry Hives.
+* **Mechanism:** - StorageWriter::WriteFeatureStates: Encodes Feature IDs, Variants, and Payloads into the Registry.
+  - StorageWriter::FlushFeatureOverrides: Commits the "Desired State" to disk.
+* **Impact:** Persistent. This is the "Cold State" read by winload.exe during the next boot.
 
-### 2. The RTL Layer (Boot Loader & Kernel Initialization)
-This is the active translation layer. It is responsible for parsing the Registry and promoting those settings into live Kernel memory.
+### 2. The RTL Layer (Live Kernel & Enforcement)
+The active synchronization bridge. This layer ensures the Kernel is in lock-step with the Registry.
 
-* **Store Types:** Boot Configuration and Kernel Non-Paged Pool.
-* **Mechanism:** 1. Early Boot: winload.exe (or efi) invokes FsepPopulateFeatureConfigurationsForPriorityKey and FsepPopulateFeatureConfigurationsForPolicyKey.
-  2. Logic: These functions decrypt the Feature IDs from the Registry, evaluate their priority levels (e.g., Policy vs. Default), and consolidate them into a "Boot Feature List."
-  3. Hand-off: winload passes this processed list to ntoskrnl.exe.
-  4. Runtime: Once the OS is live, RtlSetFeatureConfigurations can be called to modify the Kernel’s memory-resident state or commit new overrides back to the Registry for subsequent boots.
-* **Impact:** High priority. This ensures that the Feature Manager (Fm) state is initialized before any drivers or services start, allowing the Kernel to mask or unmask functionality at the lowest level.
+* **Store Types:** Kernel Non-Paged Pool (Active Memory).
+* **Mechanism:** - RtlSetFeatureConfigurations: This is the critical transition. It takes the validated configuration and pushes it directly into the Kernel's runtime structures.
+  - Evaluation: Before the push, the system evaluates "Feature Control Kinds" (User vs. Policy) to ensure priority is respected.
+* **Impact:** Immediate. By updating the Kernel memory directly, the OS can enable or disable low-level logic (like driver behaviors) without a reboot.
 
-### 3. The WNF Layer (Live Notifications)
-The "Modern" store used for A/B testing (Velocity).
+### 3. The WNF Layer (Subsystem Notification)
+The broadcast layer for user-mode processes.
 
 * **Store Names:** User (0x418A073AA3BC88F5) and Machine (0x418A073AA3BC7C75).
-* **Mechanism:** Memory-state updates via NtUpdateWnfStateData. 
-* **Impact:** Triggers immediate notifications to running processes (e.g., explorer.exe) to update UI without a restart.
+* **Mechanism:** - RtlPublishWnfStateData: Triggered by the WNF_FCON_PENDING_FEATURE_CONFIGS_CHANGED notification.
+* **Impact:** Immediate UI/UX Update. Once the Kernel (RTL Layer) and Registry (Fcon Layer) are updated, WNF tells processes like 'explorer.exe' to refresh their state so the user sees the change instantly.
 
 ---
 
