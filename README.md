@@ -9,17 +9,26 @@ This tool merges the logic of **ViVeTool** and **Mach2**, providing a unified in
 
 The script operates across the entire Windows Feature Management stack, ensuring changes are either permanent or instantaneous.
 
-### 1. The RTL Layer (Registry & Policy)
-This is the "Traditional" store. It uses `RtlSetFeatureConfigurations` to write to the Registry.
-* **Store Types:** `User` (HKCU) and `Policy` (HKLM).
-* **Mechanism:** Updates the `FeatureManagement\Overrides` keys. 
-* **Impact:** Persistent across reboots. High priority.
+### 1. The Fcon Layer (Registry Store)
+This is the primary persistent store for feature overrides. It serves as the "Source of Truth" that the system consults during the boot process and service initialization.
 
-### 2. The WNF Layer (Live Notifications)
+* **Store Types:** User (HKCU) and Policy (HKLM).
+* **Mechanism:** Uses RtlSetFeatureConfigurations to write structured data into the Software\Microsoft\Windows\CurrentVersion\Control Panel\FeatureManagement\Overrides Registry keys.
+* **Impact:** Changes are permanent until explicitly reverted. While the Registry write is instant, some system services may require a restart to re-read these keys and apply the changes.
+
+### 2. The RTL Layer (Kernel Memory & Runtime)
+This layer manages the active state of features within the Windows Kernel and system-level components. It bridges the gap between static Registry settings and the live environment.
+
+* **Store Types:** Kernel-mode memory structures and System-wide Policy.
+* **Mechanism:** It utilizes RtlSetFeatureConfigurations not just for Registry persistence, but to commit configurations directly to Kernel Memory. It also handles the evaluation of "Feature Usage" requirements before a feature is toggled.
+* **Impact:** This is the high-priority enforcement layer. If a feature is toggled here, it overrides default system behaviors. Because it touches Kernel memory, it ensures that low-level drivers and the NTOSKRNL are aware of the feature state.
+
+### 3. The WNF Layer (Live Notifications)
 The "Modern" store used for A/B testing (Velocity).
-* **Store Names:** `User` (**0x418A073AA3BC88F5**) and `Machine` (**0x418A073AA3BC7C75**).
-* **Mechanism:** Memory-state updates via `NtUpdateWnfStateData`. 
-* **Impact:** Triggers **immediate** notifications to running processes (e.g., `explorer.exe`) to update UI without a restart.
+
+* **Store Names:** User (0x418A073AA3BC88F5) and Machine (0x418A073AA3BC7C75).
+* **Mechanism:** Memory-state updates via NtUpdateWnfStateData. 
+* **Impact:** Triggers immediate notifications to running processes (e.g., explorer.exe) to update UI without a restart.
 
 ---
 
