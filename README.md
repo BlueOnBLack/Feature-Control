@@ -194,62 +194,39 @@ Clear-Host
 Write-Host
 
 # Feature List
+$Variant    = 1,2,1
 $Feature    = 57517687, 58755790, 59064570
 $UserPath   = "HKLM:\SYSTEM\CurrentControlSet\Control\FeatureManagement\Overrides\8"
 $PolicyPath = 'HKLM:SYSTEM\CurrentControlSet\Policies\Microsoft\FeatureManagement\Overrides'
 
-Write-Host "RTL, Query Kernel" -ForegroundColor Green -NoNewline
-Set-FeatureConfiguration   -Feature $Feature -Action Enable -Mode User   | Out-Null
-Set-FeatureConfiguration   -Feature $Feature -Action Enable -Mode Policy | Out-Null
-Query-KernelFeatureState -Store Runtime -Feature $Feature
+# Reset Feature
+#Set-FeatureConfiguration   -Feature $Feature -Action Reset -Mode User   | Out-Null
+#Set-FeatureConfiguration   -Feature $Feature -Action Reset -Mode Policy | Out-Null
+#Query-FeatureConfiguration -Feature $Feature
 
-Write-Host "RTL, Mode: Enable`n" -ForegroundColor Green
+#Write-Host "FCON, Mode: Enabled, Variants`n" -ForegroundColor Green
+#Modify-StagingControls        -Feature $Feature -State Default                   | Out-Null
+#Modify-StagingControls        -Feature $Feature -State Enabled                   | Out-Null
+#Modify-StagingControlVariants -Feature $Feature -State Enabled -Variant $Variant | Out-Null
+#Get-ChildItem $UserPath -ea 0 | % { Get-ItemProperty $_.PSPath } | Select-Object PSChildName, EnabledState, EnabledStateOptions, Variant, VariantPayload, VariantPayloadKind | Format-Table
 
-Set-FeatureConfiguration   -Feature $Feature -Action Enable -Mode User   | Out-Null
-Set-FeatureConfiguration   -Feature $Feature -Action Enable -Mode Policy | Out-Null
-Query-FeatureConfiguration -Feature $Feature
+Write-Host "RTL, User/Kernel Mode: Enable & Set Variant" -ForegroundColor Green
+Set-FeatureConfiguration -Feature $Feature -Variant $Variant -Action Enable -Mode User   -Store Runtime -CrossMode Unified | Out-Null
+Set-FeatureConfiguration -Feature $Feature -Variant $Variant -Action Enable -Mode Policy -Store Runtime -CrossMode Unified | Out-Null
+Get-ChildItem $UserPath -ea 0 | % { Get-ItemProperty $_.PSPath } | Select-Object PSChildName, EnabledState, EnabledStateOptions, Variant, VariantPayload, VariantPayloadKind | Format-Table
 
-Write-Host "RTL, Mode: Disable`n" -ForegroundColor Green
+Write-Host "Query, Mode: User" -ForegroundColor Magenta
+Query-FeatureConfiguration -Feature $Feature             | select FeatureId, @{Name='Variant'; Expression={$_.VariantAlt}}, Priority, EnabledState | Format-Table
+Write-Host "Query, Mode: Kernel" -ForegroundColor Magenta
+Query-KernelFeatureState   -Feature $Feature -ApplyFlags | select FeatureId, Variant, Priority, EnabledState | Format-Table
+Write-Host "Registry Look Up" -ForegroundColor Magenta
 
-Set-FeatureConfiguration   -Feature $Feature -Action Disable -Mode User   | Out-Null
-Set-FeatureConfiguration   -Feature $Feature -Action Disable -Mode Policy | Out-Null
-Query-FeatureConfiguration -Feature $Feature
 
-Write-Host "RTL, Mode: Reset`n" -ForegroundColor Green
-
-Set-FeatureConfiguration   -Feature $Feature -Action Reset -Mode User   | Out-Null
-Set-FeatureConfiguration   -Feature $Feature -Action Reset -Mode Policy | Out-Null
-Query-FeatureConfiguration -Feature $Feature
-
-Write-Host 'WNF, Mode: Enable' -ForegroundColor Green
-Write-Host
-
-Set-WnfFeatureConfig   -Store User    -Mode Enable -Feature $Feature | Out-Null
-Set-WnfFeatureConfig   -Store Machine -Mode Enable -Feature $Feature | Out-Null
-Query-WnfFeatureConfig -Store User    -Feature $Feature
-Query-WnfFeatureConfig -Store Machine -Feature $Feature
-
-Write-Host "WNF, Mode: Disable`n" -ForegroundColor Green
-
-Set-WnfFeatureConfig   -Store User    -Mode Disable -Feature $Feature | Out-Null
-Set-WnfFeatureConfig   -Store Machine -Mode Disable -Feature $Feature | Out-Null
-Query-WnfFeatureConfig -Store User    -Feature $Feature
-Query-WnfFeatureConfig -Store Machine -Feature $Feature
-
-Write-Host "WNF, Mode: Default`n" -ForegroundColor Green
-
-Set-WnfFeatureConfig   -Store User    -Mode Default -Feature $Feature | Out-Null
-Set-WnfFeatureConfig   -Store Machine -Mode Default -Feature $Feature | Out-Null
-Query-WnfFeatureConfig -Store User    -Feature $Feature
-Query-WnfFeatureConfig -Store Machine -Feature $Feature
-
-Write-Host "FCON, Mode: Enabled" -ForegroundColor Green -NoNewline
-Modify-StagingControls -Feature $Feature -State Enabled | Out-Null
-Get-ChildItem $UserPath -ea 0 | % { Get-ItemProperty $_.PSPath } | Select-Object PSChildName, EnabledState, EnabledStateOptions | Format-Table
-
-Write-Host "FCON, Mode: Variants, Enabled" -ForegroundColor Green
-Modify-StagingControlVariants -Feature $Feature -State Enabled -Variant 2 | Out-Null
-Get-ChildItem $UserPath -ea 0 | % { Get-ItemProperty $_.PSPath } | Select-Object PSChildName, Variant, VariantPayload, VariantPayloadKind | Format-Table
+# Write-Host "WNF, Mode: Enable`n" -ForegroundColor Green
+# Set-WnfFeatureConfig   -Store User    -Mode Enable -Feature $Feature | Out-Null
+# Set-WnfFeatureConfig   -Store Machine -Mode Enable -Feature $Feature | Out-Null
+# Query-WnfFeatureConfig -Store User    -Feature $Feature
+# Query-WnfFeatureConfig -Store Machine -Feature $Feature
 
 return
 ```
