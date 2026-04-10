@@ -74,6 +74,17 @@ The script performs manual bit-shifting for the `WNF_FEATURE_ENTRY` structure:
 * **UserState:** Bits 10–11
 * **TestState:** Bits 12–13
 * **Kind:** Bits 30–31
+  
+---
+
+## 🧬 Set-FeatureConfiguration Informatino
+The script support couple option's, -Feature -Variant -Action -Mode -Store -CrossMode
+
+### -CrossMode 
+Option to Choice between Kernel Unpacker bs user mode Unpacker
+1. **User:** 0x08 set State, 0x10 is Varinat
+2. **Kernel:** 0x10 use to set Enable State. [variant & Varinat packed]
+3. **Unified:** Both 0x08 & 0x10, are set to EnableState Value, [Query Offer VarinatAlt for such cases]
 
 ---
 
