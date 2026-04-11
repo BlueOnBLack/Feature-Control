@@ -1085,12 +1085,12 @@ Function Init-RTL {
                 LegacyState         = New-field 2   Int32    # 0x08
                 PackedOptions       = New-field 3   Int32    # 0x0C (Controls Bit 6/7 in compact struct)
                 ModernBucketState   = New-field 4   Byte     # 0x10
-                reserved1           = New-field 5   Byte     # 0x11
-                reserved2           = New-field 6   Byte     # 0x12
-                reserved3           = New-field 7   Byte     # 0x13
+                Reserved1           = New-field 5   Byte     # 0x10
+                Reserved2           = New-field 6   Byte     # 0x10
+                Reserved3           = New-field 7   Byte     # 0x10
                 VariantPayloadKind  = New-field 8   UInt32   # 0x14 (Source for Bits 14-15)
                 VariantPayload      = New-field 9   UInt32   # 0x18
-                Operation           = New-field 10  Int32    # 0x1C (Bitmask for the update action)
+                Operation           = New-field 10   Int32   # 0x1C (Bitmask for the update action)
             } | Out-Null
     }
 
@@ -1107,14 +1107,13 @@ Function Init-RTL {
                 Priority            = New-field 2  UInt32
                 EnabledState        = New-field 3  String
                 EnabledStateRaw     = New-field 4  String
-                IsWexpConfiguration = New-field 5  Boolean
-                HasSubscriptions    = New-field 6  Boolean
+                IsWexpConfiguration = New-field 5  UInt32
+                HasSubscriptions    = New-field 6  UInt32
                 Variant             = New-field 7  UInt32  
-                VariantAlt          = New-field 8  UInt32              
-                VariantPayloadKind  = New-field 9  UInt32
-                VariantPayload      = New-field 10  String
-                Reserved            = New-field 11 UInt32
-                EnabledStateOptions = New-field 12 UInt32
+                VariantPayloadKind  = New-field 8  UInt32
+                VariantPayload      = New-field 9  String
+                Reserved            = New-field 10 UInt32
+                EnabledStateOptions = New-field 11 UInt32
             } | Out-Null
     }
 
@@ -1131,17 +1130,17 @@ Function Init-RTL {
             EnabledState        = New-field 2  String
             EnabledStateRaw     = New-field 3  UInt32
             Variant             = New-field 4  UInt32
-            VariantAlt          = New-field 5  UInt32
-            VariantPayloadKind  = New-field 6  UInt32
-            VariantPayload      = New-field 7  String
-            HasSubscriptions    = New-field 8  Boolean
-            Priority            = New-field 9  UInt32
-            State_Service       = New-field 10  UInt32
-            State_Override      = New-field 11 UInt32
-            State_Default       = New-field 12 UInt32
-            FlagsRaw            = New-field 13 String
-            FlagsEffective      = New-field 14 String
-            MaskApplied         = New-field 15 UInt32
+            VariantPayloadKind  = New-field 5  UInt32
+            VariantPayload      = New-field 6  String
+            HasSubscriptions    = New-field 7  UInt32
+            Priority            = New-field 8  UInt32
+            State_Service       = New-field 9  UInt32
+            State_Override      = New-field 10 UInt32
+            State_Default       = New-field 11 UInt32
+            FlagsRaw            = New-field 12 String
+            FlagsEffective      = New-field 13 String
+            MaskApplied         = New-field 14 UInt32
+            IsWexpConfiguration = New-field 15 UInt32
         } | Out-Null
 }
 
@@ -1190,59 +1189,85 @@ function Write-FeatureData {
         [int]$EnabledStateOptions = 0x0,
 
         [ValidateSet(0,1)]
-        [int]$PackedOptions,
+        [int]$PackedOptions = 0x0,
 
         [ValidateSet(0,1,2)]
         [int]$Variant = 0x0,
 
         [ValidateSet(0,1)]
-        [int]$IsWEXP = 0x0,
+        [int]$IsWexpConfiguration = 0x0,
 
         [ValidateSet(0,1)]
         [int]$IsSubscribed = 0x0,
 
+        [ValidateSet(0,1,2,3)]
         [int]$VariantPayloadKind = 0x0,
-        [int]$VariantPayload = 0x0,
+
+        [ValidateSet(1,2,3,4)]
         [int]$Operation = 0x0,
 
-        [Parameter(Mandatory=$true)]
-        [ValidateSet("User", "Kernel", "Unified")]
-        [string]$Mode = "Unified"
+        [int]$VariantPayload = 0x0
     )
 
-    $structure = [Activator]::CreateInstance([RTL_FEATURE_CONFIGURATION_UPDATE])
-    $structure.FeatureId           = $FeatureId
-    $structure.Priority            = $Priority
-    $structure.LegacyState         = $EnabledState
+    <#
+        Rules Section
+        RtlpFcValidateFeatureConfigurationBuffer
 
-    switch ($Mode) {
-        "User" {
-            # Goal: Satisfy fcon.dll (Stupid Logic)
-            # Result: Bits 4-5 = State, Bits 8-13 = Variant
-            $structure.LegacyState       = $EnabledState 
-            $structure.ModernBucketState = [byte]$Variant
+        pullResult = 0i64;
+        if ( a1 )
+        {
+        if ( a2 >= 4
+            && ((unsigned __int8)a1 & 3) == 0
+            && RtlULongLongMult(*a1, 0xCui64, &pullResult) >= 0
+            && pullResult + 4 >= pullResult
+            && pullResult + 4 <= a2 )
+        {
+            v5 = *v4;
+            v6 = v3;
+            if ( !*v4 )
+            return v3;
+            for ( i = v4 + 1;
+                (!v6 || (int)RtlFcpCompareFeatureToFeature(&v4[2 * v6 - 2 + v6], i) < 0) && (i[1] & 0x30) != 48;
+                i += 3 )
+            {
+            if ( ++v6 >= v5 )
+                return v3;
+            }
         }
-        "Kernel" {
-            # Goal: Satisfy ntoskrnl.exe (Advanced Logic)
-            # Result: Bit 8-9 = State. (User Mode will see this as 'Variant 2')
-            $structure.LegacyState       = 0x0
-            $structure.ModernBucketState = $EnabledState
+        return (unsigned int)-1073741811;
         }
-        "Unified" {
-            # Goal: Satisfy BOTH at the same time.
-            # This uses the 'collision' math to force bits into both windows.
-            $structure.LegacyState       = $EnabledState
-            $structure.ModernBucketState = $EnabledState
-        }
+        return a2 != 0 ? 0xC000000D : 0;
+    #>
+
+    $data = New-Object byte[] 32
+
+    if ($Variant -gt 0x00) {
+        $VariantPayloadKind = 1
     }
 
-    $structure.PackedOptions       = [int]($VariantPayloadKind -band 0x1)
-    $structure.VariantPayloadKind  = ($Variant -band 0x3F) -bor ($IsWEXP -shl 6) -bor ($IsSubscribed -shl 7)
-    $structure.VariantPayload      = [uint32]$VariantPayload
-    $structure.Operation           = $Operation
+    [Buffer]::BlockCopy([BitConverter]::GetBytes($FeatureId), 0, $data, 0, 4)              # 0x00
+    [Buffer]::BlockCopy([BitConverter]::GetBytes($Priority), 0, $data, 4, 4)               # 0x04
+    [Buffer]::BlockCopy([BitConverter]::GetBytes($PackedOptions), 0, $data, 12, 4)         # 0x0C
+    [Buffer]::BlockCopy([BitConverter]::GetBytes($VariantPayloadKind), 0, $data, 20, 4)    # 0x14
+    [Buffer]::BlockCopy([BitConverter]::GetBytes($VariantPayload), 0, $data, 24, 4)        # 0x18
+    [Buffer]::BlockCopy([BitConverter]::GetBytes($Operation), 0, $data, 28, 4)             # 0x1C
+    
+    # Legacy Slot (0x08)
+    # Provides raw state for older tools that check this specific offset.
+    $data[8]  = [byte]$EnabledState
 
-    $ptr = ([IntPtr]::Add($UpdatePackage, ($BaseOffset + (0x20 * $Index))))
-    [marshal]::StructureToPtr($structure, $ptr, $false)
+    # Windows Experience Configuration Slot
+    $data[12] = $IsWexpConfiguration
+
+    # Modern Hybrid Byte (0x10)
+    # The Hybrid Byte (Offset 0x10) - ONLY for State/Variant
+    # We keep this CLEAN (Bits 0-5 only) to avoid the & 0x3F00 mask error
+    $data[16] = [byte](
+        (($EnabledState -band 0x03) -shl 4) -bor ($Variant -band 0x0F)
+    )
+
+    $ptr = [IntPtr]::Add($UpdatePackage, ($BaseOffset + (0x20 * $Index)))
+    [Marshal]::Copy($data, 0, $ptr, 32)
 }
 function Obfuscate-FeatureId {
     param($featureId)
@@ -1273,9 +1298,6 @@ function Set-FeatureConfiguration {
 
         [ValidateSet("Boot", "Runtime")]
         [String]$Store = "Runtime",
-
-        [ValidateSet("User", "Kernel", "Unified")]
-        [string]$CrossMode = "Unified",
 
         [Switch]$KernelMode,
         [Switch]$SysCall,
@@ -1344,7 +1366,7 @@ function Set-FeatureConfiguration {
                     -VariantPayloadKind $FeatureObj.VariantPayloadKind `
                     -VariantPayload $FeatureObj.VariantPayload `
                     -Operation $OperationType `
-                    -Mode $CrossMode
+                    -IsWexpConfiguration $FeatureObj.IsWexpConfiguration
 
             } else {
                 $variantValue = 0x0
@@ -1584,17 +1606,17 @@ function Get-FeatureObjectFromPtr {
 
     if ($Buffer) {
         $fId   = [BitConverter]::ToUInt32($Buffer, 0)
-        $flags = [uint16]([BitConverter]::ToUInt16($Buffer, 4))
+        $flags = [Uint32]([BitConverter]::ToUInt32($Buffer, 4))
         $vPay  = [BitConverter]::ToUInt32($Buffer, 8)
     } else {
         # Read as signed Int32/Int16 first
         $rawId    = [Marshal]::ReadInt32($Pointer, 0)
-        $rawFlags = [Marshal]::ReadInt16($Pointer, 4)
+        $rawFlags = [Marshal]::ReadInt32($Pointer, 4)
         $rawPay   = [Marshal]::ReadInt32($Pointer, 8)
 
         # Use BitConverter to re-interpret the bits as Unsigned
         $fId   = [BitConverter]::ToUInt32([BitConverter]::GetBytes($rawId), 0)
-        $flags = [uint16]([BitConverter]::ToUInt16([BitConverter]::GetBytes($rawFlags), 0))
+        $flags = [uint32]([BitConverter]::ToUInt32([BitConverter]::GetBytes($rawFlags), 0))
         $vPay  = [BitConverter]::ToUInt32([BitConverter]::GetBytes($rawPay), 0)
     }
     
@@ -1604,19 +1626,18 @@ function Get-FeatureObjectFromPtr {
     $StateLookup = @{ 0 = 'Default'; 1 = 'Disabled'; 2 = 'Enabled' }
 
     $rawState = ($flags -shr 4) -band 0x3
-    $EnabledState = if ($StateLookup.ContainsKey($rawState)) { $StateLookup[$rawState] } else { "N/A" }
+    $EnabledState = if ($StateLookup.ContainsKey([int]$rawState)) { $StateLookup[[int]$rawState] } else { "N/A" }
 
     $Info.FeatureId            = [uint32]$fId
     $Info.FlagsRaw             = '0x{0:X8}' -f $flags
     $Info.Priority             = $flags -band 0xF
     $Info.EnabledState         = $EnabledState
     $Info.EnabledStateRaw      = $rawState
-    $Info.IsWexpConfiguration  = [bool](($flags -shr 6) -band 0x1)
+    $Info.IsWexpConfiguration  = (($flags -shr 6) -band 0x1)
     $Info.HasSubscriptions     = [bool](($flags -shr 7) -band 0x1)
 
-    $Info.Variant              = ($flags -shr 8) -band 0x3F
-    $Info.VariantAlt           = ($flags -shr 14) -band 0x3F
-    $Info.VariantPayloadKind   = ($flags -shr 30) -band 0x3
+    $Info.Variant              = ($flags -shr 8) -band 0x03
+    $Info.VariantPayloadKind   = ($flags -shr 14) -band 0x3
     $Info.VariantPayload       = '0x{0:X8}' -f [uint32]$vPay
     $Info.Reserved             = 0 #($flags -shr 16) -band 0xFFFF
     $Info.EnabledStateOptions  = ($flags -shr 8) -band 0x3F
@@ -1816,9 +1837,9 @@ function Get-KernelObjectFromPtr {
 
     if ($ApplyMaskingFlag) {
 
-        if ($GlobalMask -band 0x4) { $flags = $flags -band 0xFFFFCFFF } # clear bits 12–13
-        if ($GlobalMask -band 0x2) { $flags = $flags -band 0xFFFFF3FF } # clear bits 10–11
-        if ($GlobalMask -band 0x1) { $flags = $flags -band 0xFFFFFCFF } # clear bits 8–9
+        if ($GlobalMask -band 0x4) { $flags = $flags -band 0xFFFFCFFF } # clear bits 1213
+        if ($GlobalMask -band 0x2) { $flags = $flags -band 0xFFFFF3FF } # clear bits 1011
+        if ($GlobalMask -band 0x1) { $flags = $flags -band 0xFFFFFCFF } # clear bits 89
         if ($GlobalMask -band 0x8) {
             $flags = $flags -band 0xC0FFFFFF  # clear variant + payload
             $vPay  = 0
@@ -1880,14 +1901,29 @@ function Get-KernelObjectFromPtr {
     # Effective Data
     $kObj.EnabledState        = $EnabledState
     $kObj.EnabledStateRaw     = [int]$rawState
-    $kObj.Variant             = ($flags -shr 14) -band 0x3F
-    $kObj.VariantAlt          = ($flags -shr 8) -band 0x3F
 
-    $kObj.VariantPayloadKind  = ($flags -shr 30) -band 0x3
+    # XOR happens inside the kernel merge logic when updating the 0x10 byte:
+    # it preserves unrelated bits in the original 32-byte flags while updating
+    # EnabledState (bits 4-5) and Variant (bits 0-3/0-5 depending on struct).
+    # During unpack, we extract the raw byte: ($flags -shr 8) -band 0xFF,
+    # then decode EnabledState = bits 4-5, Variant = bits 0-3/0-5. The XOR is internal.
+
+    $kObj.Variant             = (($flags -shr 8) -band 0x3F) -band 0x0F
+
+    $kObj.VariantPayloadKind  = ($flags -shr 14) -band 0x3
     $kObj.VariantPayload      = ('0x{0:X8}' -f [uint32]$vPay)
         
-    # Metadata
-    $kObj.HasSubscriptions    = [bool](($flags -shr 1) -band 0x1)
+    # Bit 7: HasSubscriptions
+    # This bit is ignored by the Packer (fcon.dll/RtlpFcUpdateFeature). 
+    # It is dynamically set by the Kernel ONLY if:
+    #   A) The FeatureId is in the hardcoded Master Subscription Table.
+    #   B) A Ring 3 caller has invoked RtlSubscribeForFeatureUsageNotification.
+    $kObj.HasSubscriptions = [bool](($flags -shr 7) -band 0x1)
+
+    # Bit 6: IsWexpConfiguration 
+    # Identifies if the feature is part of a Windows Experience Pack.
+    $kObj.IsWexpConfiguration = ($flags -shr 6) -band 0x1
+
     $kObj.Priority            = $flags -band 0xF
         
     # Debugging / Internal buckets
@@ -2404,15 +2440,13 @@ Clear-Host
 Write-Host
 
 # Feature List
-$Variant    = 1,2,1
+$Variant    = 1,1,2
 $Feature    = 57517687, 58755790, 59064570
 $UserPath   = "HKLM:\SYSTEM\CurrentControlSet\Control\FeatureManagement\Overrides\8"
 $PolicyPath = 'HKLM:SYSTEM\CurrentControlSet\Policies\Microsoft\FeatureManagement\Overrides'
 
-# Reset Feature
-#Set-FeatureConfiguration   -Feature $Feature -Action Reset -Mode User   | Out-Null
-#Set-FeatureConfiguration   -Feature $Feature -Action Reset -Mode Policy | Out-Null
-#Query-FeatureConfiguration -Feature $Feature
+Set-FeatureConfiguration   -Feature $Feature -Action Reset -Mode User   | Out-Null
+Set-FeatureConfiguration   -Feature $Feature -Action Reset -Mode Policy | Out-Null
 
 #Write-Host "FCON, Mode: Enabled, Variants`n" -ForegroundColor Green
 #Modify-StagingControls        -Feature $Feature -State Default                   | Out-Null
@@ -2421,16 +2455,15 @@ $PolicyPath = 'HKLM:SYSTEM\CurrentControlSet\Policies\Microsoft\FeatureManagemen
 #Get-ChildItem $UserPath -ea 0 | % { Get-ItemProperty $_.PSPath } | Select-Object PSChildName, EnabledState, EnabledStateOptions, Variant, VariantPayload, VariantPayloadKind | Format-Table
 
 Write-Host "RTL, User/Kernel Mode: Enable & Set Variant" -ForegroundColor Green
-Set-FeatureConfiguration -Feature $Feature -Variant $Variant -Action Enable -Mode User   -Store Runtime -CrossMode Unified | Out-Null
-Set-FeatureConfiguration -Feature $Feature -Variant $Variant -Action Enable -Mode Policy -Store Runtime -CrossMode Unified | Out-Null
+Set-FeatureConfiguration -Feature $Feature -Variant $Variant -Action Disable -Mode User   -Store Runtime | Out-Null
+Set-FeatureConfiguration -Feature $Feature -Variant $Variant -Action Disable -Mode Policy -Store Runtime | Out-Null
 Get-ChildItem $UserPath -ea 0 | % { Get-ItemProperty $_.PSPath } | Select-Object PSChildName, EnabledState, EnabledStateOptions, Variant, VariantPayload, VariantPayloadKind | Format-Table
 
 Write-Host "Query, Mode: User" -ForegroundColor Magenta
-Query-FeatureConfiguration -Feature $Feature             | select FeatureId, @{Name='Variant'; Expression={$_.VariantAlt}}, Priority, EnabledState | Format-Table
+Query-FeatureConfiguration -Feature $Feature             | Select FeatureId, Priority, EnabledState, Variant, VariantPayloadKind, IsWexpConfiguration, HasSubscriptions | Format-Table
 Write-Host "Query, Mode: Kernel" -ForegroundColor Magenta
-Query-KernelFeatureState   -Feature $Feature -ApplyFlags | select FeatureId, Variant, Priority, EnabledState | Format-Table
+Query-KernelFeatureState   -Feature $Feature -ApplyFlags | Select FeatureId, Priority, EnabledState, Variant, VariantPayloadKind, IsWexpConfiguration, HasSubscriptions | Format-Table
 Write-Host "Registry Look Up" -ForegroundColor Magenta
-
 
 # Write-Host "WNF, Mode: Enable`n" -ForegroundColor Green
 # Set-WnfFeatureConfig   -Store User    -Mode Enable -Feature $Feature | Out-Null
