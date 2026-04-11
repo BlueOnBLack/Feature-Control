@@ -208,21 +208,47 @@ Set-FeatureConfiguration   -Feature $Feature -Action Reset -Mode Policy | Out-Nu
 #Modify-StagingControlVariants -Feature $Feature -State Enabled -Variant $Variant | Out-Null
 #Get-ChildItem $UserPath -ea 0 | % { Get-ItemProperty $_.PSPath } | Select-Object PSChildName, EnabledState, EnabledStateOptions, Variant, VariantPayload, VariantPayloadKind | Format-Table
 
-Write-Host "RTL, User/Kernel Mode: Enable & Set Variant" -ForegroundColor Green
-Set-FeatureConfiguration -Feature $Feature -Variant $Variant -Action Disable -Mode User   -Store Runtime | Out-Null
-Set-FeatureConfiguration -Feature $Feature -Variant $Variant -Action Disable -Mode Policy -Store Runtime | Out-Null
-Get-ChildItem $UserPath -ea 0 | % { Get-ItemProperty $_.PSPath } | Select-Object PSChildName, EnabledState, EnabledStateOptions, Variant, VariantPayload, VariantPayloadKind | Format-Table
+Write-Host "RTL, User/Kernel Mode: Enable & Set Variant" -ForegroundColor Cyan
+Set-FeatureConfiguration -Feature $Feature -Variant $Variant -Action Enable -Mode User   -Store Runtime | Out-Null
+Set-FeatureConfiguration -Feature $Feature -Variant $Variant -Action Enable -Mode Policy -Store Runtime | Out-Null
 
-Write-Host "Query, Mode: User" -ForegroundColor Magenta
-Query-FeatureConfiguration -Feature $Feature             | Select FeatureId, Priority, EnabledState, Variant, VariantPayloadKind, IsWexpConfiguration, HasSubscriptions | Format-Table
+$Overrides = Get-ChildItem $UserPath -ea 0
+$UserQuery = Query-FeatureConfiguration -Feature $Feature
+$KernelQuery = Query-KernelFeatureState -Feature $Feature -ApplyFlags
+
+$Overrides | ForEach-Object { Get-ItemProperty $_.PSPath } | Format-Table `
+    @{Expression="PSChildName";         Label="Feature ID";    Alignment="Center"; Width=15},
+    @{Expression="EnabledState";        Label="State";         Alignment="Center"; Width=12},
+    @{Expression="EnabledStateOptions"; Label="Options";       Alignment="Center"; Width=15},
+    @{Expression="Variant";             Label="Variant";       Alignment="Center"; Width=10},
+    @{Expression="VariantPayload";      Label="Payload";       Alignment="Center"; Width=15},
+    @{Expression="VariantPayloadKind";  Label="Kind";          Alignment="Center"; Width=10}
+
+Write-Host "Query, Mode: User" -ForegroundColor Green
+$UserQuery | Format-Table @{Expression="FeatureId"; Alignment="Center"; Width=15},
+             @{Expression="Priority"; Alignment="Center"; Width=10},
+             @{Expression="EnabledState"; Alignment="Center"; Width=15},
+             @{Expression="Variant"; Alignment="Center"; Width=10},
+             @{Expression="VariantPayloadKind"; Alignment="Center"; Width=20},
+             @{Expression="IsWexpConfiguration"; Alignment="Center"; Width=20},
+             @{Expression="HasSubscriptions"; Alignment="Center"; Width=18}
+
 Write-Host "Query, Mode: Kernel" -ForegroundColor Magenta
-Query-KernelFeatureState   -Feature $Feature -ApplyFlags | Select FeatureId, Priority, EnabledState, Variant, VariantPayloadKind, IsWexpConfiguration, HasSubscriptions | Format-Table
+$KernelQuery | Format-Table @{Expression="FeatureId"; Alignment="Center"; Width=15},
+             @{Expression="Priority"; Alignment="Center"; Width=10},
+             @{Expression="EnabledState"; Alignment="Center"; Width=15},
+             @{Expression="Variant"; Alignment="Center"; Width=10},
+             @{Expression="VariantPayloadKind"; Alignment="Center"; Width=20},
+             @{Expression="IsWexpConfiguration"; Alignment="Center"; Width=20},
+             @{Expression="HasSubscriptions"; Alignment="Center"; Width=18}
 
 # Write-Host "WNF, Mode: Enable`n" -ForegroundColor Green
 # Set-WnfFeatureConfig   -Store User    -Mode Enable -Feature $Feature | Out-Null
 # Set-WnfFeatureConfig   -Store Machine -Mode Enable -Feature $Feature | Out-Null
 # Query-WnfFeatureConfig -Store User    -Feature $Feature
 # Query-WnfFeatureConfig -Store Machine -Feature $Feature
+
+return
 ```
 
 ---
