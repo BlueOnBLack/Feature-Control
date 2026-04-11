@@ -776,6 +776,41 @@ if ( ++v3 >= a2 )
   return 0i64;
 }
 
+// ntoskrnl.exe -> [Rules]
+// __int64 __fastcall RtlpFcValidateFeatureConfigurationBuffer(unsigned int *a1, ULONGLONG a2)
+
+unsigned int v3; // r10d
+unsigned int *v4; // r11
+unsigned int v5; // r9d
+unsigned int v6; // r8d
+_DWORD *i; // rdx
+ULONGLONG pullResult; // [rsp+30h] [rbp+8h] BYREF
+
+pullResult = 0i64;
+if ( a1 )
+{
+if ( a2 >= 4
+    && ((unsigned __int8)a1 & 3) == 0
+    && RtlULongLongMult(*a1, 0xCui64, &pullResult) >= 0
+    && pullResult + 4 >= pullResult
+    && pullResult + 4 <= a2 )
+{
+    v5 = *v4;
+    v6 = v3;
+    if ( !*v4 )
+    return v3;
+    for ( i = v4 + 1;
+        (!v6 || (int)RtlFcpCompareFeatureToFeature(&v4[2 * v6 - 2 + v6], i) < 0) && (i[1] & 0x30) != 48;
+        i += 3 )
+    {
+    if ( ++v6 >= v5 )
+        return v3;
+    }
+}
+return (unsigned int)-1073741811;
+}
+return a2 != 0 ? 0xC000000D : 0;
+
 // ntoskrnl.exe, Packer<>Unpacker 32<>12
 // __int64 __fastcall RtlpFcUpdateFeature(__int64 a1, __int64 a2)
 
@@ -1209,36 +1244,6 @@ function Write-FeatureData {
         [int]$VariantPayload = 0x0
     )
 
-    <#
-        Rules Section
-        RtlpFcValidateFeatureConfigurationBuffer
-
-        pullResult = 0i64;
-        if ( a1 )
-        {
-        if ( a2 >= 4
-            && ((unsigned __int8)a1 & 3) == 0
-            && RtlULongLongMult(*a1, 0xCui64, &pullResult) >= 0
-            && pullResult + 4 >= pullResult
-            && pullResult + 4 <= a2 )
-        {
-            v5 = *v4;
-            v6 = v3;
-            if ( !*v4 )
-            return v3;
-            for ( i = v4 + 1;
-                (!v6 || (int)RtlFcpCompareFeatureToFeature(&v4[2 * v6 - 2 + v6], i) < 0) && (i[1] & 0x30) != 48;
-                i += 3 )
-            {
-            if ( ++v6 >= v5 )
-                return v3;
-            }
-        }
-        return (unsigned int)-1073741811;
-        }
-        return a2 != 0 ? 0xC000000D : 0;
-    #>
-
     $data = New-Object byte[] 32
 
     if ($Variant -gt 0x00) {
@@ -1262,9 +1267,7 @@ function Write-FeatureData {
     # Modern Hybrid Byte (0x10)
     # The Hybrid Byte (Offset 0x10) - ONLY for State/Variant
     # We keep this CLEAN (Bits 0-5 only) to avoid the & 0x3F00 mask error
-    $data[16] = [byte](
-        (($EnabledState -band 0x03) -shl 4) -bor ($Variant -band 0x0F)
-    )
+    $data[16] = [byte]((($EnabledState -band 0x03) -shl 4) -bor ($Variant -band 0x0F))
 
     $ptr = [IntPtr]::Add($UpdatePackage, ($BaseOffset + (0x20 * $Index)))
     [Marshal]::Copy($data, 0, $ptr, 32)
@@ -1908,8 +1911,7 @@ function Get-KernelObjectFromPtr {
     # During unpack, we extract the raw byte: ($flags -shr 8) -band 0xFF,
     # then decode EnabledState = bits 4-5, Variant = bits 0-3/0-5. The XOR is internal.
 
-    $kObj.Variant             = (($flags -shr 8) -band 0x3F) -band 0x0F
-
+    $kObj.Variant             = ($flags -shr 8) -band 0x0F
     $kObj.VariantPayloadKind  = ($flags -shr 14) -band 0x3
     $kObj.VariantPayload      = ('0x{0:X8}' -f [uint32]$vPay)
         
@@ -2454,15 +2456,39 @@ Set-FeatureConfiguration   -Feature $Feature -Action Reset -Mode Policy | Out-Nu
 #Modify-StagingControlVariants -Feature $Feature -State Enabled -Variant $Variant | Out-Null
 #Get-ChildItem $UserPath -ea 0 | % { Get-ItemProperty $_.PSPath } | Select-Object PSChildName, EnabledState, EnabledStateOptions, Variant, VariantPayload, VariantPayloadKind | Format-Table
 
-Write-Host "RTL, User/Kernel Mode: Enable & Set Variant" -ForegroundColor Green
-Set-FeatureConfiguration -Feature $Feature -Variant $Variant -Action Disable -Mode User   -Store Runtime | Out-Null
-Set-FeatureConfiguration -Feature $Feature -Variant $Variant -Action Disable -Mode Policy -Store Runtime | Out-Null
-Get-ChildItem $UserPath -ea 0 | % { Get-ItemProperty $_.PSPath } | Select-Object PSChildName, EnabledState, EnabledStateOptions, Variant, VariantPayload, VariantPayloadKind | Format-Table
+Write-Host "RTL, User/Kernel Mode: Enable & Set Variant" -ForegroundColor Cyan
+Set-FeatureConfiguration -Feature $Feature -Variant $Variant -Action Enable -Mode User   -Store Runtime | Out-Null
+Set-FeatureConfiguration -Feature $Feature -Variant $Variant -Action Enable -Mode Policy -Store Runtime | Out-Null
 
-Write-Host "Query, Mode: User" -ForegroundColor Magenta
-Query-FeatureConfiguration -Feature $Feature             | Select FeatureId, Priority, EnabledState, Variant, VariantPayloadKind, IsWexpConfiguration, HasSubscriptions | Format-Table
+$Overrides = Get-ChildItem $UserPath -ea 0
+$UserQuery = Query-FeatureConfiguration -Feature $Feature
+$KernelQuery = Query-KernelFeatureState -Feature $Feature -ApplyFlags
+
+$Overrides | ForEach-Object { Get-ItemProperty $_.PSPath } | Format-Table `
+    @{Expression="PSChildName";         Label="Feature ID";    Alignment="Center"; Width=15},
+    @{Expression="EnabledState";        Label="State";         Alignment="Center"; Width=12},
+    @{Expression="EnabledStateOptions"; Label="Options";       Alignment="Center"; Width=15},
+    @{Expression="Variant";             Label="Variant";       Alignment="Center"; Width=10},
+    @{Expression="VariantPayload";      Label="Payload";       Alignment="Center"; Width=15},
+    @{Expression="VariantPayloadKind";  Label="Kind";          Alignment="Center"; Width=10}
+
+Write-Host "Query, Mode: User" -ForegroundColor Green
+$UserQuery | Format-Table @{Expression="FeatureId"; Alignment="Center"; Width=15},
+             @{Expression="Priority"; Alignment="Center"; Width=10},
+             @{Expression="EnabledState"; Alignment="Center"; Width=15},
+             @{Expression="Variant"; Alignment="Center"; Width=10},
+             @{Expression="VariantPayloadKind"; Alignment="Center"; Width=20},
+             @{Expression="IsWexpConfiguration"; Alignment="Center"; Width=20},
+             @{Expression="HasSubscriptions"; Alignment="Center"; Width=18}
+
 Write-Host "Query, Mode: Kernel" -ForegroundColor Magenta
-Query-KernelFeatureState   -Feature $Feature -ApplyFlags | Select FeatureId, Priority, EnabledState, Variant, VariantPayloadKind, IsWexpConfiguration, HasSubscriptions | Format-Table
+$KernelQuery | Format-Table @{Expression="FeatureId"; Alignment="Center"; Width=15},
+             @{Expression="Priority"; Alignment="Center"; Width=10},
+             @{Expression="EnabledState"; Alignment="Center"; Width=15},
+             @{Expression="Variant"; Alignment="Center"; Width=10},
+             @{Expression="VariantPayloadKind"; Alignment="Center"; Width=20},
+             @{Expression="IsWexpConfiguration"; Alignment="Center"; Width=20},
+             @{Expression="HasSubscriptions"; Alignment="Center"; Width=18}
 
 # Write-Host "WNF, Mode: Enable`n" -ForegroundColor Green
 # Set-WnfFeatureConfig   -Store User    -Mode Enable -Feature $Feature | Out-Null
