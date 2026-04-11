@@ -776,6 +776,55 @@ if ( ++v3 >= a2 )
   return 0i64;
 }
 
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Both functions converge on the same 12-byte Kernel structure using identical bitwise logic.
+
+1. Logic Mapping and Bit-Field Destination
+
+- Property: EnabledState
+  Registry: EnabledState
+  32-byte Offset: 0x08
+  12-byte Destination: Offset 0x04, Bits 4-5 (Shift 4, Mask 0x30)
+
+- Property: WEXP Options
+  Registry: IsEnabledStateOptions
+  32-byte Offset: 0x0C
+  12-byte Destination: Offset 0x04, Bit 6 (Shift 6, Mask 0x40)
+
+- Property: Variant ID
+  Registry: Variant
+  32-byte Offset: 0x10
+  12-byte Destination: Offset 0x04, Bits 8-13 (Shift 8, Mask 0x3F00)
+
+- Property: Payload Kind
+  Registry: VariantPayloadKind
+  32-byte Offset: 0x14
+  12-byte Destination: Offset 0x04, Bits 14-15 (Shift 14, Mask 0xC000)
+
+- Property: Payload Data
+  Registry: VariantPayload
+  32-byte Offset: 0x18
+  12-byte Destination: Offset 0x08, Bits 0-31 (Full DWORD)
+
+2. Core Functional Difference
+
+Winload (FsepPopulateFeatureConfiguration):
+- Directly compiles Registry strings into the 12-byte table.
+- Enforces a Variant limit of 63 (0x3F).
+- Operates during boot to establish the initial system state.
+
+NTOS Kernel (RtlpFcUpdateFeature):
+- Patches the existing 12-byte table using a 32-byte command buffer.
+- Uses a Change Mask at offset 0x1C to selectively update fields.
+- Bit 1 set: Updates State.
+- Bit 2 set: Updates Variant, Kind, and Payload.
+
+3. The 12-Byte Truth
+The Kernel only consumes the 12-byte result. Offset 0x00 is the Scrambled ID, Offset 0x04 contains all bit-packed flags (including the Priority in bits 0-3), and Offset 0x08 is the raw 32-bit payload data.
+
+  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
 // ntoskrnl.exe -> [Rules]
 // __int64 __fastcall RtlpFcValidateFeatureConfigurationBuffer(unsigned int *a1, ULONGLONG a2)
 
@@ -811,6 +860,86 @@ return (unsigned int)-1073741811;
 }
 return a2 != 0 ? 0xC000000D : 0;
 
+// Winload.exe, Registry to 12 Bytes Struct [Skip 32 translate]
+// __int64 __fastcall FsepPopulateFeatureConfiguration(__int64 a1, __int64 *a2, __int64 a3, __int64 a4)
+
+{
+  int v7; // ebp
+  int v8; // r14d
+  int i; // edx
+  __int64 v10; // rcx
+  bool v11; // zf
+  unsigned int v12; // ebx
+  int v13; // ebx
+  __int64 result; // rax
+  UNICODE_STRING String2; // [rsp+30h] [rbp-28h] BYREF
+
+  v7 = a1;
+  if ( a1 && a2 && *a2 && a4 )
+  {
+    v8 = 0;
+    for ( i = 0; ; i = v8 )
+    {
+      result = FsepEnumerateValueKey(a1, i, a3, (_DWORD)a2, a3);
+      if ( (_DWORD)result == -2147483622 )
+        return 0i64;
+      if ( (int)result < 0 )
+        return result;
+      v10 = *a2;
+      *(_DWORD *)(&String2.MaximumLength + 1) = 0;
+      v11 = *(_DWORD *)(v10 + 4) == 4;
+      String2.Buffer = (wchar_t *)(v10 + 20);
+      String2.Length = *(_WORD *)(v10 + 16);
+      String2.MaximumLength = String2.Length;
+      if ( v11 && *(_DWORD *)(v10 + 12) == 4 )
+      {
+        v12 = *(_DWORD *)(*(unsigned int *)(v10 + 8) + v10);
+        if ( RtlEqualUnicodeString(&EnabledStateValueName, &String2, 1u) )
+        {
+          if ( v12 > 2 )
+            goto LABEL_24;
+          v13 = (*(_DWORD *)(a4 + 4) ^ (16 * v12)) & 0x30;
+          goto LABEL_12;
+        }
+        if ( RtlEqualUnicodeString(&IsEnabledStateOptionsValueName, &String2, 1u) )
+        {
+          if ( v12 <= 1 )
+          {
+            v13 = (*(_DWORD *)(a4 + 4) ^ (v12 << 6)) & 0x40;
+LABEL_12:
+            *(_DWORD *)(a4 + 4) ^= v13;
+          }
+        }
+        else if ( RtlEqualUnicodeString(&VariantValueName, &String2, 1u) )
+        {
+          if ( v12 < 0x40 )
+          {
+            v13 = (*(_DWORD *)(a4 + 4) ^ (v12 << 8)) & 0x3F00;
+            goto LABEL_12;
+          }
+        }
+        else if ( RtlEqualUnicodeString(&VariantPayloadKindValueName, &String2, 1u) )
+        {
+          if ( v12 < 4 )
+          {
+            v13 = (*(_DWORD *)(a4 + 4) ^ (v12 << 14)) & 0xC000;
+            goto LABEL_12;
+          }
+        }
+        else if ( RtlEqualUnicodeString(&VariantPayloadValueName, &String2, 1u) )
+        {
+          *(_DWORD *)(a4 + 8) = v12;
+        }
+      }
+LABEL_24:
+      ++v8;
+      LODWORD(a1) = v7;
+    }
+  }
+  return 3221225485i64;
+}
+
+
 // ntoskrnl.exe, Packer<>Unpacker 32<>12
 // __int64 __fastcall RtlpFcUpdateFeature(__int64 a1, __int64 a2)
 
@@ -845,14 +974,14 @@ return a2 != 0 ? 0xC000000D : 0;
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-// fcon.dll ==> [Packer]
+// fcon.dll ==> [Stupid Packer]
 // __int64 __fastcall StagingControls_EnumerateFeatures__lambda_025e1f4f593c8987aee57b4ee711a6c5____(_BYTE ***a1)
 
 LODWORD(v28) = *(v8 - 1);
 v15 = v8[5];
 HIDWORD(v28) = v12 & 0xF | (16 * (v8[1] & 3 | (4 * (v8[2] & 1 | (4 * (((v8[4] & 3) << 6) | v8[3] & 0x3F))))));
 
-// EditionUpgradeManagerObj.dll --> [Unpacker]
+// EditionUpgradeManagerObj.dll --> [Stupid Unpacker]
 // __int64 __fastcall wil_QueryFeatureState(__int64 a1, unsigned int a2, int a3, int a4, _DWORD *a5, _DWORD *a6)
 
 {
@@ -886,7 +1015,7 @@ HIDWORD(v28) = v12 & 0xF | (16 * (v8[1] & 3 | (4 * (v8[2] & 1 | (4 * (((v8[4] & 
     *(_DWORD *)(a1 + 20) = (v14 >> 6) & 1;              // Source: Offset 0x0C (Bit 6) at RTL_FEATURE_CONFIGURATION_UPDATE
 }
 
-// ntoskrnl.exe --> [Unpacker]
+// ntoskrnl.exe --> [Kernel Unpacker]
 // __int64 __fastcall wil_details_StagingConfig_QueryFeatureState(__int64 a1, __int64 a2, int a3, int a4)
 
 {
@@ -1160,24 +1289,27 @@ Function Init-RTL {
         -Module (New-InMemoryModule -ModuleName RTL_KERNEL_FEATURE_INFO) `
         -FullName RTL_KERNEL_FEATURE_INFO `
         -StructFields @{
-            FeatureId           = New-field 0  UInt32
-            HasUniqueState      = New-field 1  Boolean
-            EnabledState        = New-field 2  String
-            EnabledStateRaw     = New-field 3  UInt32
-            Variant             = New-field 4  UInt32
-            VariantPayloadKind  = New-field 5  UInt32
-            VariantPayload      = New-field 6  String
-            HasSubscriptions    = New-field 7  UInt32
-            Priority            = New-field 8  UInt32
-            State_Service       = New-field 9  UInt32
-            State_Override      = New-field 10 UInt32
-            State_Default       = New-field 11 UInt32
-            FlagsRaw            = New-field 12 String
-            FlagsEffective      = New-field 13 String
-            MaskApplied         = New-field 14 UInt32
-            IsWexpConfiguration = New-field 15 UInt32
+            FeatureId               = New-field 0  UInt32
+            HasUniqueState          = New-field 1  Boolean
+            EnabledState            = New-field 2  String
+            EnabledStateRaw         = New-field 3  UInt32
+            Variant                 = New-field 4  UInt32
+            VariantPayloadKind      = New-field 5  UInt32
+            VariantPayload          = New-field 6  String
+            HasSubscriptions        = New-field 7  UInt32
+            Priority                = New-field 8  UInt32
+            State_Service           = New-field 9  UInt32
+            State_Override          = New-field 10 UInt32
+            State_Default           = New-field 11 UInt32
+            FlagsRaw                = New-field 12 String
+            FlagsEffective          = New-field 13 String
+            MaskApplied             = New-field 14 UInt32
+            IsWexpConfiguration     = New-field 15 UInt32
+            VariantPayloadKindFinal = New-field 16 UInt32
+            ForceState              = New-field 17 Boolean
+            QueryEligible           = New-field 18 Boolean
         } | Out-Null
-}
+    }
 
     try {
         $Module = [AppDomain]::CurrentDomain.GetAssemblies()| ? { $_.ManifestModule.ScopeName -eq "RTL" } | select -Last 1
@@ -1225,8 +1357,8 @@ function Write-FeatureData {
 
         [ValidateSet(0,1)]
         [int]$PackedOptions = 0x0,
-
-        [ValidateSet(0,1,2)]
+        
+        #[ValidateRange(0, 15)]
         [int]$Variant = 0x0,
 
         [ValidateSet(0,1)]
@@ -1384,8 +1516,7 @@ function Set-FeatureConfiguration {
                     -Priority $Priority `
                     -EnabledState $EnabledState `
                     -Operation $OperationType `
-                    -Variant $variantValue `
-                    -Mode $CrossMode
+                    -Variant $variantValue
             }
         }
 
@@ -1612,12 +1743,9 @@ function Get-FeatureObjectFromPtr {
         $flags = [Uint32]([BitConverter]::ToUInt32($Buffer, 4))
         $vPay  = [BitConverter]::ToUInt32($Buffer, 8)
     } else {
-        # Read as signed Int32/Int16 first
         $rawId    = [Marshal]::ReadInt32($Pointer, 0)
         $rawFlags = [Marshal]::ReadInt32($Pointer, 4)
         $rawPay   = [Marshal]::ReadInt32($Pointer, 8)
-
-        # Use BitConverter to re-interpret the bits as Unsigned
         $fId   = [BitConverter]::ToUInt32([BitConverter]::GetBytes($rawId), 0)
         $flags = [uint32]([BitConverter]::ToUInt32([BitConverter]::GetBytes($rawFlags), 0))
         $vPay  = [BitConverter]::ToUInt32([BitConverter]::GetBytes($rawPay), 0)
@@ -1639,11 +1767,11 @@ function Get-FeatureObjectFromPtr {
     $Info.IsWexpConfiguration  = (($flags -shr 6) -band 0x1)
     $Info.HasSubscriptions     = [bool](($flags -shr 7) -band 0x1)
 
-    $Info.Variant              = ($flags -shr 8) -band 0x03
+                                #$Info.Variant = ($flags -shr 8) -band 0x3F
+    $Info.Variant              = $Info.Variant = (($flags -shr 8) -band 0x3F) -band 0x1F # -band 0x03 to satisfy kernel
     $Info.VariantPayloadKind   = ($flags -shr 14) -band 0x3
     $Info.VariantPayload       = '0x{0:X8}' -f [uint32]$vPay
     $Info.Reserved             = 0 #($flags -shr 16) -band 0xFFFF
-    $Info.EnabledStateOptions  = ($flags -shr 8) -band 0x3F
 
     return $Info
 }
@@ -1911,9 +2039,12 @@ function Get-KernelObjectFromPtr {
     # During unpack, we extract the raw byte: ($flags -shr 8) -band 0xFF,
     # then decode EnabledState = bits 4-5, Variant = bits 0-3/0-5. The XOR is internal.
 
-    $kObj.Variant             = ($flags -shr 8) -band 0x0F
-    $kObj.VariantPayloadKind  = ($flags -shr 14) -band 0x3
-    $kObj.VariantPayload      = ('0x{0:X8}' -f [uint32]$vPay)
+    $kObj.Variant = (($flags -shr 8) -band 0x3F) -band 0x1F
+    $kObj.VariantPayloadKind      = ($flags -shr 14) -band 0x3
+    $kObj.VariantPayload          = ('0x{0:X8}' -f [uint32]$vPay)
+    $kObj.VariantPayloadKindFinal = ($flags -shr 30) -band 0x3
+    $kObj.ForceState              = [bool](($flags -band 0x2) -ne 0)
+    $kObj.QueryEligible           = [bool](($flags -band 0x1) -eq 0)
         
     # Bit 7: HasSubscriptions
     # This bit is ignored by the Packer (fcon.dll/RtlpFcUpdateFeature). 
