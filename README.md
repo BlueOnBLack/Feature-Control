@@ -217,7 +217,6 @@ Write-Host "Query, Mode: User" -ForegroundColor Magenta
 Query-FeatureConfiguration -Feature $Feature             | Select FeatureId, Priority, EnabledState, Variant, VariantPayloadKind, IsWexpConfiguration, HasSubscriptions | Format-Table
 Write-Host "Query, Mode: Kernel" -ForegroundColor Magenta
 Query-KernelFeatureState   -Feature $Feature -ApplyFlags | Select FeatureId, Priority, EnabledState, Variant, VariantPayloadKind, IsWexpConfiguration, HasSubscriptions | Format-Table
-Write-Host "Registry Look Up" -ForegroundColor Magenta
 
 # Write-Host "WNF, Mode: Enable`n" -ForegroundColor Green
 # Set-WnfFeatureConfig   -Store User    -Mode Enable -Feature $Feature | Out-Null
