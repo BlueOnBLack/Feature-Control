@@ -77,37 +77,6 @@ The script performs manual bit-shifting for the `WNF_FEATURE_ENTRY` structure:
   
 ---
 
-## 🧬 Feature Configuration Management
-
-This script facilitates the modification of Windows Feature Configurations by interacting with `RTL_FEATURE_CONFIGURATION_UPDATE`. 
-It supports several parameters including `-Feature`, `-Variant`, `-Action`, `-Mode`, `-Store`, and the logic-heavy `-CrossMode`.
-
-### 🛠 CrossMode Logic
-The `-CrossMode` parameter determines how the script handles the memory offset collision between the User-mode unpacker (`fcon.dll`) and the Kernel-mode unpacker (`ntoskrnl.exe`).
-
-| Mode | Target Logic | Bitwise Behavior |
-| :--- | :--- | :--- |
-| **User** | fcon.dll | Sets **State** at bit 0x08 and **Variant** at 0x10. |
-| **Kernel** | ntoskrnl.exe | Uses 0x10 to set the **Enabled State**. (User mode sees this as Variant). |
-| **Unified** | Both | Synchronizes 0x08 and 0x10 to the `EnableState` value to satisfy both unpackers. |
-
----
-
-### ⚙️ Parameter Breakdown
-
-* **-FeatureId**: The unique identifier for the specific Windows feature.
-* **-Priority**: Defines the override priority (Valid range: 1-14).
-* **-EnabledState**: Sets the state of the feature:
-    * `0`: Default
-    * `1`: Disabled
-    * `2`: Enabled
-* **-Mode**: Specifies the target environment:
-    * `User`: Standard user-land feature toggling.
-    * `Kernel`: Low-level system feature toggling.
-    * `Unified`: High-compatibility mode that forces bits into both windows.
-
----
-
 ## 🧪 Decode & Encode Feature ID
 
 This section provides logic and source references for encoding and decoding **FeatureIDs** in the Windows Registry.
@@ -225,15 +194,13 @@ Clear-Host
 Write-Host
 
 # Feature List
-$Variant    = 1,2,1
+$Variant    = 1,1,2
 $Feature    = 57517687, 58755790, 59064570
 $UserPath   = "HKLM:\SYSTEM\CurrentControlSet\Control\FeatureManagement\Overrides\8"
 $PolicyPath = 'HKLM:SYSTEM\CurrentControlSet\Policies\Microsoft\FeatureManagement\Overrides'
 
-# Reset Feature
-#Set-FeatureConfiguration   -Feature $Feature -Action Reset -Mode User   | Out-Null
-#Set-FeatureConfiguration   -Feature $Feature -Action Reset -Mode Policy | Out-Null
-#Query-FeatureConfiguration -Feature $Feature
+Set-FeatureConfiguration   -Feature $Feature -Action Reset -Mode User   | Out-Null
+Set-FeatureConfiguration   -Feature $Feature -Action Reset -Mode Policy | Out-Null
 
 #Write-Host "FCON, Mode: Enabled, Variants`n" -ForegroundColor Green
 #Modify-StagingControls        -Feature $Feature -State Default                   | Out-Null
@@ -242,24 +209,21 @@ $PolicyPath = 'HKLM:SYSTEM\CurrentControlSet\Policies\Microsoft\FeatureManagemen
 #Get-ChildItem $UserPath -ea 0 | % { Get-ItemProperty $_.PSPath } | Select-Object PSChildName, EnabledState, EnabledStateOptions, Variant, VariantPayload, VariantPayloadKind | Format-Table
 
 Write-Host "RTL, User/Kernel Mode: Enable & Set Variant" -ForegroundColor Green
-Set-FeatureConfiguration -Feature $Feature -Variant $Variant -Action Enable -Mode User   -Store Runtime -CrossMode Unified | Out-Null
-Set-FeatureConfiguration -Feature $Feature -Variant $Variant -Action Enable -Mode Policy -Store Runtime -CrossMode Unified | Out-Null
+Set-FeatureConfiguration -Feature $Feature -Variant $Variant -Action Disable -Mode User   -Store Runtime | Out-Null
+Set-FeatureConfiguration -Feature $Feature -Variant $Variant -Action Disable -Mode Policy -Store Runtime | Out-Null
 Get-ChildItem $UserPath -ea 0 | % { Get-ItemProperty $_.PSPath } | Select-Object PSChildName, EnabledState, EnabledStateOptions, Variant, VariantPayload, VariantPayloadKind | Format-Table
 
 Write-Host "Query, Mode: User" -ForegroundColor Magenta
-Query-FeatureConfiguration -Feature $Feature             | select FeatureId, @{Name='Variant'; Expression={$_.VariantAlt}}, Priority, EnabledState | Format-Table
+Query-FeatureConfiguration -Feature $Feature             | Select FeatureId, Priority, EnabledState, Variant, VariantPayloadKind, IsWexpConfiguration, HasSubscriptions | Format-Table
 Write-Host "Query, Mode: Kernel" -ForegroundColor Magenta
-Query-KernelFeatureState   -Feature $Feature -ApplyFlags | select FeatureId, Variant, Priority, EnabledState | Format-Table
+Query-KernelFeatureState   -Feature $Feature -ApplyFlags | Select FeatureId, Priority, EnabledState, Variant, VariantPayloadKind, IsWexpConfiguration, HasSubscriptions | Format-Table
 Write-Host "Registry Look Up" -ForegroundColor Magenta
-
 
 # Write-Host "WNF, Mode: Enable`n" -ForegroundColor Green
 # Set-WnfFeatureConfig   -Store User    -Mode Enable -Feature $Feature | Out-Null
 # Set-WnfFeatureConfig   -Store Machine -Mode Enable -Feature $Feature | Out-Null
 # Query-WnfFeatureConfig -Store User    -Feature $Feature
 # Query-WnfFeatureConfig -Store Machine -Feature $Feature
-
-return
 ```
 
 ---
