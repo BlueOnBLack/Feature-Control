@@ -1294,20 +1294,22 @@ Function Init-RTL {
             EnabledState            = New-field 2  String
             EnabledStateRaw         = New-field 3  UInt32
             Variant                 = New-field 4  UInt32
-            VariantPayloadKind      = New-field 5  UInt32
-            VariantPayload          = New-field 6  String
-            HasSubscriptions        = New-field 7  UInt32
-            Priority                = New-field 8  UInt32
-            State_Service           = New-field 9  UInt32
-            State_Override          = New-field 10 UInt32
-            State_Default           = New-field 11 UInt32
-            FlagsRaw                = New-field 12 String
-            FlagsEffective          = New-field 13 String
-            MaskApplied             = New-field 14 UInt32
-            IsWexpConfiguration     = New-field 15 UInt32
-            VariantPayloadKindFinal = New-field 16 UInt32
-            ForceState              = New-field 17 Boolean
-            QueryEligible           = New-field 18 Boolean
+            VariantRaw              = New-field 5  UInt32
+            VariantPayloadKind      = New-field 6  UInt32
+            VariantPayload          = New-field 7  String
+            HasSubscriptions        = New-field 8  UInt32
+            Priority                = New-field 9  UInt32
+            State_Service           = New-field 10  UInt32
+            State_Override          = New-field 11 UInt32
+            State_Default           = New-field 12 UInt32
+            FlagsRaw                = New-field 13 String
+            FlagsEffective          = New-field 14 String
+            MaskApplied             = New-field 15 UInt32
+            IsWexpConfiguration     = New-field 16 UInt32
+            VariantPayloadKindFinal = New-field 17 UInt32
+            HasNonDefaultState      = New-field 18 Boolean
+            QueryEligible           = New-field 19 Boolean
+            Bit0                    = New-field 20 Boolean
         } | Out-Null
     }
 
@@ -1399,7 +1401,7 @@ function Write-FeatureData {
     # Modern Hybrid Byte (0x10)
     # The Hybrid Byte (Offset 0x10) - ONLY for State/Variant
     # We keep this CLEAN (Bits 0-5 only) to avoid the & 0x3F00 mask error
-    $data[16] = [byte]((($EnabledState -band 0x03) -shl 4) -bor ($Variant -band 0x0F))
+    $data[16] = (($EnabledState -band 0x03) -shl 4) -bor ($Variant -band 0x3F)
 
     $ptr = [IntPtr]::Add($UpdatePackage, ($BaseOffset + (0x20 * $Index)))
     [Marshal]::Copy($data, 0, $ptr, 32)
@@ -2039,12 +2041,16 @@ function Get-KernelObjectFromPtr {
     # During unpack, we extract the raw byte: ($flags -shr 8) -band 0xFF,
     # then decode EnabledState = bits 4-5, Variant = bits 0-3/0-5. The XOR is internal.
 
-    $kObj.Variant = (($flags -shr 8) -band 0x3F) -band 0x1F
+    # Set the Variant value by ensuring the 6th bit (0x20) is set (OR operation)
+    $kObj.VariantRaw              = (($flags -shr 8) -band 0x3F)
+    # # Variant extraction: lower 6 bits first, then mask out upper bit to get lower 5 bits
+    $kObj.Variant                 = (($flags -shr 8) -band 0x3F) -band 0x1F
+
     $kObj.VariantPayloadKind      = ($flags -shr 14) -band 0x3
     $kObj.VariantPayload          = ('0x{0:X8}' -f [uint32]$vPay)
     $kObj.VariantPayloadKindFinal = ($flags -shr 30) -band 0x3
-    $kObj.ForceState              = [bool](($flags -band 0x2) -ne 0)
-    $kObj.QueryEligible           = [bool](($flags -band 0x1) -eq 0)
+    $kObj.HasNonDefaultState      = [bool](($flags -band 0x2) -ne 0)
+    $kObj.Bit0                    = [bool](($flags -band 0x1) -eq 0)
         
     # Bit 7: HasSubscriptions
     # This bit is ignored by the Packer (fcon.dll/RtlpFcUpdateFeature). 
