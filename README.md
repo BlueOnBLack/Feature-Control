@@ -272,148 +272,123 @@ Standard Override	RTL_STAGING_FEATURE_ENTRY	8 Bytes	  ModifyStagingControls
 Variant Override	RTL_STAGING_VARIANT_ENTRY	12 Bytes	ModifyStagingControlVariants
 ````
 ---
-# 🧠 WNF Feature Control – Minimal Notes
----
-## 📦 SOURCE
+# 🧠 WNF Feature Control – Internal API Notes
 
-- mach2 (reverse reference)
-- WNF (Windows Notification Facility)
-- Feature system backend (pre + post fcon)
----
-
-## 🛠 API
-
-### ntdll.dll
-
-#### NtQueryWnfStateData
-→ reads WNF feature blob  
-
-#### NtUpdateWnfStateData
-→ writes feature configuration  
+This documentation describes the low-level structures and native APIs used for managing Windows Feature Configuration through the **WNF (Windows Notification Facility)** backend.
 
 ---
 
-## 🔍 INTERNAL (RESOLUTION)
+#### 📋 Data Structures (C++)
 
-### EditionUpgradeManagerObj.dll
+These structures represent the internal layout of feature configuration entries stored inside WNF state blobs.
 
-#### wil_details_StagingConfig_Load  
-→ loads WNF feature data  
+```cpp
+// Size: 12 bytes (0x0C)
+// Core runtime feature entry (matches kernel format)
+typedef struct _WNF_FEATURE_ENTRY {
+    uint32_t FeatureId;   // 0x00: Unique feature identifier
+    uint32_t PackedBits;  // 0x04: Bitfield (states, variant, flags)
+    uint32_t Payload;     // 0x08: Optional payload (threshold, config)
+} WNF_FEATURE_ENTRY;
 
-#### wil_details_StagingConfig_QueryFeatureState  
-→ resolves final feature state  
-
-#### wil_StagingConfig_QueryFeatureState  
-→ public wrapper  
-
-#### wil_details_NtQueryWnfStateData  
-→ internal query helper  
-
----
-
-### ntoskrnl.exe
-
-#### NtQueryWnfStateData  
-→ kernel handler  
-
-#### ExpCaptureWnfStateName  
-→ validates state name  
-
-#### wil_details_StagingConfig_Load  
-→ kernel-side load  
-
----
-
-## 📋 STRUCTS
-
-### WNF_FEATURE_ENTRY (12B)
-
+// Size: 16 bytes (0x10)
+// Header describing a WNF feature update buffer
+typedef struct _WNF_FEATURE_UPDATE {
+    uint8_t  Version;                   // 0x00: Structure version (usually 2)
+    uint8_t  VersionMinor;              // 0x01: Minor version
+    uint16_t HeaderSizeBytes;           // 0x02: Size of header (typically 0x10)
+    uint16_t FeatureCount;              // 0x04: Number of feature entries
+    uint16_t FeatureUsageTriggerCount;  // 0x06: Variant/trigger count
+    uint32_t SessionProperties;         // 0x08: Session flags
+    uint32_t Properties;                // 0x0C: Global flags
+} WNF_FEATURE_UPDATE;
 ```
 
-FeatureId
-PackedBits
-Payload
-
-```id="s1"
-
-→ kernel runtime format  
-
 ---
 
-### WNF_FEATURE_UPDATE (Header)
+#### 🛠 API Information (C++)
 
+These native APIs are exposed by `ntdll.dll` and are used to interact with WNF state data.
+
+```cpp
+/**
+ * @brief Queries WNF state data (feature configuration blob).
+ */
+NTSTATUS NtQueryWnfStateData(
+    PCWNF_STATE_NAME  StateName,
+    PCWNF_TYPE_ID     TypeId,
+    const VOID*       ExplicitScope,
+    PWNF_CHANGE_STAMP ChangeStamp,
+    PVOID             Buffer,
+    PULONG            BufferSize
+);
+
+/**
+ * @brief Updates WNF state data (writes feature configuration).
+ */
+NTSTATUS NtUpdateWnfStateData(
+    PCWNF_STATE_NAME  StateName,
+    PVOID             Buffer,
+    ULONG             Length,
+    PWNF_CHANGE_STAMP ChangeStamp,
+    PVOID             TypeId,
+    ULONG             ExplicitScope,
+    ULONG             MatchingChangeStamp
+);
 ```
 
-Version
-FeatureCount
-Properties
+---
 
-```id="s2"
+#### 🔍 Internal Consumers
 
-→ batch descriptor  
+These functions parse and resolve feature state from WNF blobs.
+
+**EditionUpgradeManagerObj.dll**
+
+* `wil_details_StagingConfig_Load` → Loads WNF feature data
+* `wil_details_StagingConfig_QueryFeatureState` → Resolves final state
+* `wil_StagingConfig_QueryFeatureState` → Public wrapper
+* `wil_details_NtQueryWnfStateData` → Internal query helper
+
+**ntoskrnl.exe**
+
+* `NtQueryWnfStateData` → Kernel handler
+* `ExpCaptureWnfStateName` → Validates WNF identifiers
+* `wil_details_StagingConfig_Load` → Kernel-side parsing
 
 ---
 
-### WNF_FEATURE_INFO (Parsed)
+#### 🧠 Bitfield Layout (PackedBits)
 
 ```
-
-FeatureId
-Service/User/Test
-Kind
-Payload
-
-```id="s3"
-
-→ readable result  
-
----
-
-## 🧠 BITFIELD
-
+bits 8-9   → Service State
+bits 10-11 → User State
+bits 12-13 → Test State
+bits 30-31 → Kind (payload type)
 ```
 
-bits 8-9   → Service
-bits 10-11 → User
-bits 12-13 → Test
-bits 30-31 → Kind
+---
 
-```id="bits"
+#### 🔗 Quick Summary
 
-→ multiple states in one value  
+| Feature System Component | Role                          |
+| ------------------------ | ----------------------------- |
+| WNF                      | Feature storage backend       |
+| ntdll.dll                | Read/write interface          |
+| EditionUpgradeManager    | Usermode resolver             |
+| ntoskrnl.exe             | Final authority (enforcement) |
 
 ---
 
-## ⚙️ PRIORITY
+#### ⚡ Notes
+
+* Feature entries are stored as **12-byte records**
+* Multiple states coexist → resolved by priority
+* WNF acts as the **central feature data channel**
+* Kernel may override or mask values at runtime
 
 ```
-
-Test > User > Service
-
-```id="prio"
-
-→ highest wins  
-
----
-
-## 🔄 FLOW
-
-```
-
-NtUpdateWnfStateData
-→ WNF blob updated
-→ kernel parses
-→ wil_* resolves
-
-```id="flow"
-
----
-
-## 🔥 TL;DR
-
-- WNF = feature storage  
-- 12B entries = truth  
-- kernel = final decision  
+``` 
 ---
 
 # 🧠 RTL Feature Control – Internal API Notes
