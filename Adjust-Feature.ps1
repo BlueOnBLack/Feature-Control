@@ -225,24 +225,25 @@ Function Init-FCON {
             } | Out-Null
     }
 
-    # Define an header for RTL_STAGING_VARIANT_ENTRY
+    # Define the header using 1-byte logic + explicit padding
     if (-not ([PSTypeName]'RTL_STAGING_VARIANT_ENTRY').Type) {
         New-Struct `
             -Module (New-InMemoryModule -ModuleName RTL_STAGING_VARIANT_ENTRY) `
             -FullName RTL_STAGING_VARIANT_ENTRY `
             -StructFields @{
-                FeatureId = New-field 0 UInt32  # 0x00
-                State     = New-field 1 Byte    # 0x04
-                Variant   = New-field 2 Byte    # 0x05
-                Reserved2 = New-field 3 Byte    # 0x06 - 0x0B (6 bytes)
-                Reserved3 = New-field 4 Byte    # 0x06 - 0x0B (6 bytes)
-                Reserved4 = New-field 5 Byte    # 0x06 - 0x0B (6 bytes)
-                Reserved5 = New-field 6 Byte    # 0x06 - 0x0B (6 bytes)
-                Reserved6 = New-field 7 Byte    # 0x06 - 0x0B (6 bytes)
-                Reserved7 = New-field 8 Byte    # 0x06 - 0x0B (6 bytes)
+                FeatureId = New-field 0 UInt32  # 0x00 (4 bytes)
+            
+                State     = New-field 1 Byte    # 0x04 (1 byte) - Code: *(_BYTE *)(v2 + 4)
+                Pad1      = New-field 2 Byte    # 0x05
+                Pad2      = New-field 3 Byte    # 0x06
+                Pad3      = New-field 4 Byte    # 0x07
+            
+                Variant   = New-field 5 Byte    # 0x08 (1 byte) - Code: *(_DWORD *)(v2 + 8)
+                Pad4      = New-field 6 Byte    # 0x09
+                Pad5      = New-field 7 Byte    # 0x0A
+                Pad6      = New-field 8 Byte    # 0x0B
             } | Out-Null
     }
-
 }
 function Modify-StagingControls {
     [CmdletBinding()]
@@ -287,7 +288,7 @@ function Modify-StagingControls {
             $Entry           = [Activator]::CreateInstance([Type]'RTL_STAGING_FEATURE_ENTRY')
             $Entry.FeatureId = $Feature[$i]
             $Entry.State     = [byte]($StateMap[$State])
-            $OffsetPtr       = [intptr]::Add($Handle, ($i * 0x0C))
+            $OffsetPtr       = [intptr]::Add($Handle, ($i * 0x8))
             [Marshal]::StructureToPtr($Entry, $OffsetPtr, $false)
         }
 
@@ -341,14 +342,14 @@ function Modify-StagingControlVariants {
     $Count  = $Feature.Count
     $Handle = [Marshal]::AllocHGlobal(0x0c * $Count)
     $Priority = [byte]$KindMap[$Kind]
-    $WipeFlag = [Byte]($(if ($WipeExisting.IsPresent) { 1 } else { 0 }))
+    $WipeFlag = if ($WipeExisting.IsPresent) { [Byte]1 } else { [Byte]0 }
 
     try {
         for ($i = 0; $i -lt $Count; $i++) {
             $Entry           = [Activator]::CreateInstance([Type]'RTL_STAGING_VARIANT_ENTRY')
-            $Entry.FeatureId = $Feature[$i]
+            $Entry.FeatureId = [uint32]$Feature[$i]
             $Entry.State     = [byte]$StateMap[$State]
-            $Entry.Variant   = if ($Variant.Count -gt $i) { $Variant[$i] } else { 0x00 }
+            $Entry.Variant   = if ($Variant.Count -gt $i) { [byte]$Variant[$i] } else { [byte]0x00 }
             $OffsetPtr       = [intptr]::Add($Handle, ($i * 0x0C))
             [Marshal]::StructureToPtr($Entry, $OffsetPtr, $false)
         }
@@ -620,7 +621,7 @@ struct _RTL_FEATURE_CONFIGURATION
     ULONG EnabledState:2;              //0x4
     ULONG IsWexpConfiguration:1;       //0x4
     ULONG HasSubscriptions:1;          //0x4
-    ULONG Variant:6;                   //0x4, Value Come from EnabledStateOptions
+    ULONG Variant:6;                   //0x4
     ULONG VariantPayloadKind:2;        //0x4
     ULONG VariantPayload;              //0x8
 };
@@ -684,68 +685,175 @@ return a2 != 0 ? 0xC000000D : 0;
 00000008 VariantPayload  dd ?        ; 0x8, 4 bytes payload value
 0000000C _RTL_FEATURE_CONFIGURATION ends
 
-// fcon.dll ,, BAse info ^ Offsets
+// construct Using fcon.dll
+// __int64 __fastcall StagingControls_SetFeatureEnabledState
+// // __int64 __fastcall StorageWriter::SetFeatureStates(struct _RTL_FEATURE_CONFIGURATION_UPDATE *a1, unsigned __int64 a2, const unsigned __int16 *a3)
+
+#pragma pack(push, 1)
+struct _RTL_FEATURE_CONFIGURATION_UPDATE {
+    // --- Header / Metadata (Offsets 0x00 - 0x07) ---
+    // StorageWriter accesses these via *((uint32_t*)i - 2) and -1
+    /* 0x00 */ uint32_t FeatureId;           // The ID of the feature
+    /* 0x04 */ uint32_t ChangeMask;          // Logic Bitmask (1=State, 2=Variant)
+
+    // --- Active Data Area (Offsets 0x08 - 0x1B) ---
+    // StorageWriter starts its loop pointer 'i' exactly here (+8)
+    /* 0x08 */ uint32_t EnabledState;        // *i -> "EnabledState"
+    /* 0x0C */ uint32_t EnabledStateOptions; // *(i + 1) -> "EnabledStateOptions"
+    
+    /* 0x10 */ uint8_t  Variant;             // i[8] -> "Variant"
+    /* 0x11 */ uint8_t  Reserved[3];         // Padding to align next DWORD
+    
+    /* 0x14 */ uint32_t VariantPayloadKind;  // *(i + 3) -> "VariantPayloadKind"
+    /* 0x18 */ uint32_t VariantPayload;      // *(i + 4) -> "VariantPayload"
+
+    // --- Trailing Metadata (Offsets 0x1C - 0x1F) ---
+    /* 0x1C */ uint32_t ConfigurationKind;   // The Hive (e.g., 8 for User)
+}; 
+// Static assert to ensure the ">> 5" (32-byte) stride logic holds true
+static_assert(sizeof(_RTL_FEATURE_CONFIGURATION_UPDATE) == 32, "Struct must be exactly 32 bytes");
+#pragma pack(pop)
+
+// fcon.dll, BAse info ^ Offsets
+// __int64 __fastcall StagingControls_SetFeatureEnabledState
+
+if ( (*((_BYTE *)v7 + 32) & 1) != 0 )
+{
+if ( v12 == v25 )
+{
+    std::vector<_RTL_FEATURE_CONFIGURATION_UPDATE>::_Emplace_reallocate<_RTL_FEATURE_CONFIGURATION_UPDATE>(
+    (const void **)v31,
+    v25,
+    v7);
+    v12 = (struct _RTL_FEATURE_CONFIGURATION_UPDATE *)v32;
+    v25 = v31[1];
+}
+else
+{
+    *(_OWORD *)v25 = *(_OWORD *)v7;
+    *((_OWORD *)v25 + 1) = *((_OWORD *)v7 + 1);
+    v25 = (struct _RTL_FEATURE_CONFIGURATION_UPDATE *)((char *)v25 + 32);
+    v31[1] = v25;
+}
+}
+v7 = (struct RtlFeatureUpdate *)((char *)v7 + 40);
+--v6;
+}
+while ( v6 );
+v18 = v31[0];
+}
+v26 = RtlSetFeatureConfigurations(a5, 1i64, v18, (v25 - v18) >> 5);
+
+// fcon.dll, BAse info ^ Offsets
 // __int64 __fastcall StorageWriter::SetFeatureStates(struct _RTL_FEATURE_CONFIGURATION_UPDATE *a1, unsigned __int64 a2, const unsigned __int16 *a3)
 
-Data = *(_DWORD *)i;
-v11 = RegSetValueExW(hKey, L"EnabledState", 0, 4u, (const BYTE *)&Data, 4u);
-v10 = (unsigned __int16)v11 | 0x80070000;
-if ( v11 <= 0 )
-  v10 = v11;
-if ( v10 < 0 )
+__int64 __fastcall StorageWriter::SetFeatureStates(
+        struct _RTL_FEATURE_CONFIGURATION_UPDATE *a1,
+        unsigned __int64 a2,
+        const unsigned __int16 *a3)
 {
-  v17 = (unsigned int)v10;
-  v18 = 473i64;
-  goto LABEL_29;
-}
-Data = *((_DWORD *)i + 1);
-v12 = RegSetValueExW(hKey, L"EnabledStateOptions", 0, 4u, (const BYTE *)&Data, 4u);
-v10 = (unsigned __int16)v12 | 0x80070000;
-if ( v12 <= 0 )
-  v10 = v12;
-if ( v10 < 0 )
-{
-  v17 = (unsigned int)v10;
-  v18 = 474i64;
-  goto LABEL_29;
-}
-Data = (unsigned __int8)i[8];
-v13 = RegSetValueExW(hKey, L"Variant", 0, 4u, (const BYTE *)&Data, 4u);
-v10 = (unsigned __int16)v13 | 0x80070000;
-if ( v13 <= 0 )
-  v10 = v13;
-if ( v10 < 0 )
-{
-  v17 = (unsigned int)v10;
-  v18 = 475i64;
-  goto LABEL_29;
-}
-Data = *((_DWORD *)i + 3);
-v14 = RegSetValueExW(hKey, L"VariantPayloadKind", 0, 4u, (const BYTE *)&Data, 4u);
-v10 = (unsigned __int16)v14 | 0x80070000;
-if ( v14 <= 0 )
-  v10 = v14;
-if ( v10 < 0 )
-{
-  v17 = (unsigned int)v10;
-  v18 = 476i64;
-  goto LABEL_29;
-}
-Data = *((_DWORD *)i + 4);
-v15 = RegSetValueExW(hKey, L"VariantPayload", 0, 4u, (const BYTE *)&Data, 4u);
-v10 = (unsigned __int16)v15 | 0x80070000;
-if ( v15 <= 0 )
-  v10 = v15;
-if ( v10 < 0 )
-{
-  v17 = (unsigned int)v10;
-  v18 = 477i64;
-  goto LABEL_29;
-}
-if ( hKey )
-  RegCloseKey(hKey);
-if ( ++v3 >= a2 )
-  return 0i64;
+  __int64 v3; // rsi
+  char *i; // rdi
+  __int64 v7; // rdx
+  __int64 v8; // rcx
+  int v9; // eax
+  signed int v10; // ebx
+  LSTATUS v11; // eax
+  LSTATUS v12; // eax
+  LSTATUS v13; // eax
+  LSTATUS v14; // eax
+  LSTATUS v15; // eax
+  unsigned __int64 v17; // r9
+  __int64 v18; // rdx
+  int lpData; // [rsp+20h] [rbp-10h]
+  wil::details::in1diag3 *retaddr; // [rsp+68h] [rbp+38h]
+  int Data; // [rsp+78h] [rbp+48h] BYREF
+  HKEY hKey; // [rsp+88h] [rbp+58h] BYREF
+
+  v3 = 0i64;
+  if ( !a2 )
+    return 0i64;
+  for ( i = (char *)a1 + 8; ; i += 32 )
+  {
+    v7 = *((unsigned int *)i - 2);
+    v8 = *((unsigned int *)i - 1);
+    hKey = 0i64;
+    v9 = StorageWriter::CreateFeatureKey(v8, v7, &hKey, a3);
+    v10 = v9;
+    if ( v9 < 0 )
+      break;
+    Data = *(_DWORD *)i;
+    v11 = RegSetValueExW(hKey, L"EnabledState", 0, 4u, (const BYTE *)&Data, 4u);
+    v10 = (unsigned __int16)v11 | 0x80070000;
+    if ( v11 <= 0 )
+      v10 = v11;
+    if ( v10 < 0 )
+    {
+      v17 = (unsigned int)v10;
+      v18 = 473i64;
+      goto LABEL_29;
+    }
+    Data = *((_DWORD *)i + 1);
+    v12 = RegSetValueExW(hKey, L"EnabledStateOptions", 0, 4u, (const BYTE *)&Data, 4u);
+    v10 = (unsigned __int16)v12 | 0x80070000;
+    if ( v12 <= 0 )
+      v10 = v12;
+    if ( v10 < 0 )
+    {
+      v17 = (unsigned int)v10;
+      v18 = 474i64;
+      goto LABEL_29;
+    }
+    Data = (unsigned __int8)i[8];
+    v13 = RegSetValueExW(hKey, L"Variant", 0, 4u, (const BYTE *)&Data, 4u);
+    v10 = (unsigned __int16)v13 | 0x80070000;
+    if ( v13 <= 0 )
+      v10 = v13;
+    if ( v10 < 0 )
+    {
+      v17 = (unsigned int)v10;
+      v18 = 475i64;
+      goto LABEL_29;
+    }
+    Data = *((_DWORD *)i + 3);
+    v14 = RegSetValueExW(hKey, L"VariantPayloadKind", 0, 4u, (const BYTE *)&Data, 4u);
+    v10 = (unsigned __int16)v14 | 0x80070000;
+    if ( v14 <= 0 )
+      v10 = v14;
+    if ( v10 < 0 )
+    {
+      v17 = (unsigned int)v10;
+      v18 = 476i64;
+      goto LABEL_29;
+    }
+    Data = *((_DWORD *)i + 4);
+    v15 = RegSetValueExW(hKey, L"VariantPayload", 0, 4u, (const BYTE *)&Data, 4u);
+    v10 = (unsigned __int16)v15 | 0x80070000;
+    if ( v15 <= 0 )
+      v10 = v15;
+    if ( v10 < 0 )
+    {
+      v17 = (unsigned int)v10;
+      v18 = 477i64;
+      goto LABEL_29;
+    }
+    if ( hKey )
+      RegCloseKey(hKey);
+    if ( ++v3 >= a2 )
+      return 0i64;
+  }
+  v17 = (unsigned int)v9;
+  v18 = 471i64;
+LABEL_29:
+  wil::details::in1diag3::Return_Hr(
+    retaddr,
+    (void *)v18,
+    (unsigned int)"onecore\\base\\flighting\\featuremanagement\\libs\\featurestatewriter\\storagewriter.cpp",
+    (const char *)v17,
+    lpData);
+  if ( hKey )
+    RegCloseKey(hKey);
+  return (unsigned int)v10;
 }
 
 // ntoskrnl.exe, Packer<>Unpacker 32<>12
@@ -1259,6 +1367,13 @@ function Write-FeatureData {
     )
 
     $data = New-Object byte[] 32
+    [array]::Clear($data, 0, 32)
+
+    if ($EnabledState -eq 0 -or $EnabledState -eq 1) {
+        # If the feature is disabled, a Variant ID usually doesn't make sense 
+        # and could collide with the "Disabled" bit pattern.
+        $Variant = 0
+    }
 
     if ($Variant -gt 0x00) {
         $VariantPayloadKind = 1
@@ -1266,19 +1381,23 @@ function Write-FeatureData {
 
     [Buffer]::BlockCopy([BitConverter]::GetBytes($FeatureId), 0, $data, 0, 4)              # 0x00
     [Buffer]::BlockCopy([BitConverter]::GetBytes($Priority), 0, $data, 4, 4)               # 0x04
-    [Buffer]::BlockCopy([BitConverter]::GetBytes($PackedOptions), 0, $data, 12, 4)         # 0x0C
     [Buffer]::BlockCopy([BitConverter]::GetBytes($VariantPayloadKind), 0, $data, 20, 4)    # 0x14
     [Buffer]::BlockCopy([BitConverter]::GetBytes($VariantPayload), 0, $data, 24, 4)        # 0x18
     [Buffer]::BlockCopy([BitConverter]::GetBytes($Operation), 0, $data, 28, 4)             # 0x1C
     
     # Legacy Slot (0x08)
     # Provides raw state for older tools that check this specific offset.
-    $data[8]  = [byte]$EnabledState
+    [Buffer]::BlockCopy([BitConverter]::GetBytes($EnabledState), 0, $data, 8, 4)
 
     # Windows Experience Configuration Slot
     $data[12] = [byte]$IsWexpConfiguration
     
-    if ($Variant -gt 15) {
+    if (-not ($EnabledState -eq 2)) {
+        
+        # Nuke it! Ensure offset 16 is strictly zeroed for Disabled/Default states.
+        $data[16] = 0x00
+
+    } elseif ($Variant -gt 15) {
         
         # Option: PURE VARIANT (Legacy/fcon style)
         # Preservation: Keeps all 6 bits of the Variant (up to 63).
@@ -1287,13 +1406,17 @@ function Write-FeatureData {
         
         Write-Warning "Variant > 15: Overwriting Buckets 8-13. State preserved at 0x08."
 
-    } else {
+    } elseif ($Variant -gt 0x0) {
         
         # Option: HYBRID (Modern/Hybrid style)
         # Preservation: Keeps both State and Variant.
         # Logic: State in Bits 4-5 (Policy), Variant in Bits 0-3 (Low Var).
         $data[16] = [byte]((($EnabledState -band 0x03) -shl 4) -bor ($Variant -band 0x0F))
 
+    } else {
+
+        # Move EnabledState to Bits 4-5 so the Unpacker finds it!
+        $data[16] = [byte](($EnabledState -band 0x03) -shl 4)
     }
 
     $ptr = [IntPtr]::Add($UpdatePackage, ($BaseOffset + (0x20 * $Index)))
@@ -1392,7 +1515,7 @@ function Set-FeatureConfiguration {
                     -FeatureId $FeatureObj.FeatureId `
                     -Priority $FeatureObj.Priority `
                     -EnabledState $FeatureObj.EnabledStateRaw `
-                    -Variant  $FeatureObj.Variant`
+                    -Variant  0x0 `
                     -VariantPayloadKind $FeatureObj.VariantPayloadKind `
                     -VariantPayload $FeatureObj.VariantPayload `
                     -Operation $OperationType `
@@ -2565,7 +2688,7 @@ Clear-Host
 Write-Host
 
 # Feature List
-$Variant    = 1,1,2
+$Variant    = 0,1,2
 $Feature    = 57517687, 58755790, 59064570
 $UserPath   = "HKLM:\SYSTEM\CurrentControlSet\Control\FeatureManagement\Overrides\8"
 $PolicyPath = 'HKLM:SYSTEM\CurrentControlSet\Policies\Microsoft\FeatureManagement\Overrides'
@@ -2618,6 +2741,7 @@ $KernelQuery | Format-Table @{Expression="FeatureId"; Alignment="Center"; Width=
              @{Expression="VariantPayloadKind"; Alignment="Center"; Width=20},
              @{Expression="IsWexpConfiguration"; Alignment="Center"; Width=20},
              @{Expression="HasSubscriptions"; Alignment="Center"; Width=18}
+
 
 Write-Host "  * WNF, Mode: Enable`n" -ForegroundColor Green
 Set-WnfFeatureConfig   -Store User    -Mode Enable -Feature $Feature | Out-Null
