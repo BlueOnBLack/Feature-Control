@@ -205,7 +205,7 @@ typedef struct _KERNEL_FEATURE_TABLE {
 ```
 ---
 
-### 🧠 fcon.dll | Internal Feature Control API
+### 🧠 FCON feature Api Set | Internal Feature Control API
 
 This documentation details the low-level structures and exported functions found in `fcon.dll` used for managing Windows Feature Configuration (Staging).
 
@@ -273,7 +273,7 @@ Variant Override	RTL_STAGING_VARIANT_ENTRY	12 Bytes	ModifyStagingControlVariants
 ````
 ---
 
-### 🧠 rtl Api Set | Internal Feature Control API
+### 🧠 RTL feature Api Set | Internal Feature Control API
 **Struct Information**
 ```cpp
 * RTL_FEATURE_CONFIGURATION_UPDATE - NtDoc
