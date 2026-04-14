@@ -145,7 +145,73 @@ typedef struct _KERNEL_FEATURE_TABLE {
 ```
 ---
 
-### 💻 C++ Implementation Example
+### 🧠 fcon.dll | Internal Feature Control API
+
+This documentation details the low-level structures and exported functions found in `fcon.dll` used for managing Windows Feature Configuration (Staging).
+
+---
+
+#### 📋 Data Structures (C++)
+
+Both structures require 1-byte alignment to match the internal memory layout of the Feature Manager.
+
+```cpp
+// Size: 8 bytes (0x08)
+// Used for simple feature toggles
+typedef struct _RTL_STAGING_FEATURE_ENTRY {
+    uint32_t FeatureId;    // 0x00: The unique ID of the feature
+    uint8_t  State;        // 0x04: 0 = Default, 1 = Disabled, 2 = Enabled
+    uint8_t  Reserved[3];  // 0x05: Alignment padding to 8 bytes
+} RTL_STAGING_FEATURE_ENTRY;
+
+// Size: 12 bytes (0x0C)
+// Used for features with specific variants/sub-configurations
+typedef struct _RTL_STAGING_VARIANT_ENTRY {
+    uint32_t FeatureId;    // 0x00: The unique ID of the feature
+    uint8_t  State;        // 0x04: 0 = Default, 1 = Disabled, 2 = Enabled
+    uint8_t  Reserved1[3]; // 0x05: Alignment padding
+    uint8_t  Variant;      // 0x08: The variant index to apply
+    uint8_t  Reserved2[3]; // 0x09: Alignment padding to 12 bytes
+} RTL_STAGING_VARIANT_ENTRY;
+🛠 API Information (C++)
+These functions are exported by fcon.dll and are responsible for committing the structure arrays into the system state.
+
+C++
+/**
+ * @brief Modifies basic feature staging controls.
+ * @param Priority     1 = Service, 2 = User, 3 = Test
+ * @param Count        Number of elements in the Buffer
+ * @param Buffer       Pointer to an array of RTL_STAGING_FEATURE_ENTRY
+ * @param WipeExisting 1 to clear previous overrides in this priority, 0 to append
+ */
+extern "C" HRESULT ModifyStagingControls(
+    uint8_t  Priority,
+    uint64_t Count,
+    void* Buffer,
+    uint8_t  WipeExisting
+);
+
+/**
+ * @brief Modifies feature staging controls with variant support.
+ * @param Priority     1 = Service, 2 = User, 3 = Test
+ * @param Count        Number of elements in the Buffer
+ * @param Buffer       Pointer to an array of RTL_STAGING_VARIANT_ENTRY
+ * @param WipeExisting 1 to clear previous overrides in this priority, 0 to append
+ */
+extern "C" HRESULT ModifyStagingControlVariants(
+    uint8_t  Priority,
+    uint64_t Count,
+    void* Buffer,
+    uint8_t  WipeExisting
+);
+🔗 Quick Summary
+Feature Type	Struct Used	Total Size	API Function
+Standard Override	RTL_STAGING_FEATURE_ENTRY	8 Bytes	ModifyStagingControls
+Variant Override	RTL_STAGING_VARIANT_ENTRY	12 Bytes	ModifyStagingControlVariants
+
+---
+
+### 💻 C++ Decode / Encode Implementation
 This demo uses standard intrinsic-style rotations (`_rotl`, `_rotr`).
 
 ```cpp
