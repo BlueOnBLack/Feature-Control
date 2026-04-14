@@ -273,7 +273,7 @@ Variant Override	RTL_STAGING_VARIANT_ENTRY	12 Bytes	ModifyStagingControlVariants
 ````
 ---
 
-# 🧠 RTL Feature Control – Internal API Notes (Clean Git-Style Summary)
+# 🧠 RTL Feature Control – Internal API Notes
 
 ---
 
