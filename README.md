@@ -194,7 +194,7 @@ Clear-Host
 Write-Host
 
 # Feature List
-$Variant    = 1,1,2
+$Variant    = 0,1,2
 $Feature    = 57517687, 58755790, 59064570
 $UserPath   = "HKLM:\SYSTEM\CurrentControlSet\Control\FeatureManagement\Overrides\8"
 $PolicyPath = 'HKLM:SYSTEM\CurrentControlSet\Policies\Microsoft\FeatureManagement\Overrides'
@@ -247,6 +247,7 @@ $KernelQuery | Format-Table @{Expression="FeatureId"; Alignment="Center"; Width=
              @{Expression="VariantPayloadKind"; Alignment="Center"; Width=20},
              @{Expression="IsWexpConfiguration"; Alignment="Center"; Width=20},
              @{Expression="HasSubscriptions"; Alignment="Center"; Width=18}
+
 
 Write-Host "  * WNF, Mode: Enable`n" -ForegroundColor Green
 Set-WnfFeatureConfig   -Store User    -Mode Enable -Feature $Feature | Out-Null
