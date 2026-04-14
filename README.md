@@ -144,6 +144,117 @@ typedef struct _KERNEL_FEATURE_TABLE {
 } KERNEL_FEATURE_TABLE, *PKERNEL_FEATURE_TABLE;
 ```
 ---
+## 🧪  Demonstration Script
+
+The following demo showcases the full lifecycle of feature manipulation across both RTL and WNF stacks.
+
+```powershell
+Clear-Host
+Write-Host
+
+# Feature List
+$Variant    = 0,1,2
+$Feature    = 57517687, 58755790, 59064570
+$UserPath   = "HKLM:\SYSTEM\CurrentControlSet\Control\FeatureManagement\Overrides\8"
+$PolicyPath = 'HKLM:SYSTEM\CurrentControlSet\Policies\Microsoft\FeatureManagement\Overrides'
+
+Set-FeatureConfiguration   -Feature $Feature -Action Reset -Mode User   | Out-Null
+Set-FeatureConfiguration   -Feature $Feature -Action Reset -Mode Policy | Out-Null
+
+Write-Host "  * FCON, Mode: Enabled, Variants`n" -ForegroundColor Green
+Modify-StagingControls        -Feature $Feature -State Default                   | Out-Null
+Modify-StagingControls        -Feature $Feature -State Enabled                   | Out-Null
+Modify-StagingControlVariants -Feature $Feature -State Enabled -Variant $Variant | Out-Null
+
+Get-ChildItem $UserPath -ea 0 | % { Get-ItemProperty $_.PSPath } | 
+    Format-Table @{n='FeatureId';e='PSChildName';a='Center';w=15}, 
+                 @{n='State';e='EnabledState';a='Center';w=10}, 
+                 @{n='Variant';e='Variant';a='Center';w=10}, 
+                 @{n='Kind';e='VariantPayloadKind';a='Center';w=10}, 
+                 @{n='Payload';e='VariantPayload';a='Center';w=10}
+
+Write-Host "  * RTL, User/Kernel Mode: Enable & Set Variant" -ForegroundColor Green
+Set-FeatureConfiguration -Feature $Feature -Variant $Variant -Action Enable -Mode User   -Store Runtime | Out-Null
+Set-FeatureConfiguration -Feature $Feature -Variant $Variant -Action Enable -Mode Policy -Store Runtime | Out-Null
+
+$Overrides = Get-ChildItem $UserPath -ea 0
+$UserQuery = Query-FeatureConfiguration -Feature $Feature
+$KernelQuery = Query-KernelFeatureState -Feature $Feature -ApplyFlags
+
+$Overrides | % { Get-ItemProperty $_.PSPath } | Format-Table `
+    @{Expression="PSChildName";         Label="Feature ID";    Alignment="Center"; Width=15},
+    @{Expression="EnabledState";        Label="State";         Alignment="Center"; Width=12},
+    @{Expression="EnabledStateOptions"; Label="Options";       Alignment="Center"; Width=15},
+    @{Expression="Variant";             Label="Variant";       Alignment="Center"; Width=10},
+    @{Expression="VariantPayload";      Label="Payload";       Alignment="Center"; Width=15},
+    @{Expression="VariantPayloadKind";  Label="Kind";          Alignment="Center"; Width=10}
+
+Write-Host "  * Query, Mode:User" -ForegroundColor Green
+$UserQuery | Format-Table @{Expression="FeatureId"; Alignment="Center"; Width=15},
+             @{Expression="Priority"; Alignment="Center"; Width=10},
+             @{Expression="EnabledState"; Alignment="Center"; Width=15},
+             @{Expression="Variant"; Alignment="Center"; Width=10},
+             @{Expression="VariantPayloadKind"; Alignment="Center"; Width=20},
+             @{Expression="IsWexpConfiguration"; Alignment="Center"; Width=20},
+             @{Expression="HasSubscriptions"; Alignment="Center"; Width=18}
+
+Write-Host "  * Query, Mode:Kernel" -ForegroundColor Green
+$KernelQuery | Format-Table @{Expression="FeatureId"; Alignment="Center"; Width=15},
+             @{Expression="Priority"; Alignment="Center"; Width=10},
+             @{Expression="EnabledState"; Alignment="Center"; Width=15},
+             @{Expression="Variant"; Alignment="Center"; Width=10},
+             @{Expression="VariantPayloadKind"; Alignment="Center"; Width=20},
+             @{Expression="IsWexpConfiguration"; Alignment="Center"; Width=20},
+             @{Expression="HasSubscriptions"; Alignment="Center"; Width=18}
+
+
+Write-Host "  * WNF, Mode: Enable`n" -ForegroundColor Green
+Set-WnfFeatureConfig   -Store User    -Mode Enable -Feature $Feature | Out-Null
+Set-WnfFeatureConfig   -Store Machine -Mode Enable -Feature $Feature | Out-Null
+$wnfUser =  Query-WnfFeatureConfig -Store User    -Feature $Feature
+$wnfQuery = Query-WnfFeatureConfig -Store Machine -Feature $Feature
+
+# Formatted User Store
+$wnfUser | Format-Table `
+    @{Expression="FeatureId";    Label="FeatureId";    Alignment="Center"; Width=15},
+    @{Expression="ServiceState"; Label="Priority";     Alignment="Center"; Width=10}, 
+    @{Expression="StateText";    Label="EnabledState"; Alignment="Center"; Width=15}, 
+    @{Expression="Payload";      Label="Variant";      Alignment="Center"; Width=10},
+    @{Expression="Kind";         Label="PayloadKind";  Alignment="Center"; Width=20},
+    @{Expression="InVariantList";Label="WexpConfig";   Alignment="Center"; Width=20},
+    @{Expression={ $false };     Label="Subscriptions";Alignment="Center"; Width=18}
+
+# Formatted Machine Store
+$wnfQuery | Format-Table `
+    @{Expression="FeatureId";    Label="FeatureId";    Alignment="Center"; Width=15},
+    @{Expression="ServiceState"; Label="Priority";     Alignment="Center"; Width=10}, 
+    @{Expression="StateText";    Label="EnabledState"; Alignment="Center"; Width=15}, 
+    @{Expression="Payload";      Label="Variant";      Alignment="Center"; Width=10},
+    @{Expression="Kind";         Label="PayloadKind";  Alignment="Center"; Width=20},
+    @{Expression="InVariantList";Label="WexpConfig";   Alignment="Center"; Width=20},
+    @{Expression={ $false };     Label="Subscriptions";Alignment="Center"; Width=18}
+
+return
+```
+
+---
+
+## 📝 Capability Matrix
+
+| Feature | RTL Engine | WNF Engine |
+| :--- | :---: | :---: |
+| **Persistence** | Permanent (Registry) | Volatile (Memory) |
+| **Instant UI Update** | No | **Yes** |
+| **A/B Test Override** | High | Medium |
+| **Requires Reboot** | Sometimes | **Never** |
+
+---
+
+## ⚠️ Safety & Compatibility
+* **Requirements:** Windows 10 Build 18963+ or Windows 11.
+* **Privileges:** **Administrator Privileges Required** for both Registry (HKLM) and WNF Machine store access.
+```
+---
 
 ### 🧠 fcon.dll | Internal Feature Control API
 
@@ -333,122 +444,334 @@ struct _RTL_FEATURE_CONFIGURATION
 00000008 VariantPayload  dd ?        ; 0x8, 4 bytes payload value
 0000000C _RTL_FEATURE_CONFIGURATION ends
 ```
----
+**Struct Rules**
+````cpp
+// ntoskrnl.exe
+// __int64 __fastcall RtlpFcValidateFeatureConfigurationBuffer(unsigned int *a1, ULONGLONG a2)
 
-### 💻 C++ Decode / Encode Implementation
-This demo uses standard intrinsic-style rotations (`_rotl`, `_rotr`).
+unsigned int v3; // r10d
+unsigned int *v4; // r11
+unsigned int v5; // r9d
+unsigned int v6; // r8d
+_DWORD *i; // rdx
+ULONGLONG pullResult; // [rsp+30h] [rbp+8h] BYREF
 
-```cpp
+pullResult = 0i64;
+if ( a1 )
+{
+if ( a2 >= 4
+    && ((unsigned __int8)a1 & 3) == 0
+    && RtlULongLongMult(*a1, 0xCui64, &pullResult) >= 0
+    && pullResult + 4 >= pullResult
+    && pullResult + 4 <= a2 )
+{
+    v5 = *v4;
+    v6 = v3;
+    if ( !*v4 )
+    return v3;
+    for ( i = v4 + 1;
+        (!v6 || (int)RtlFcpCompareFeatureToFeature(&v4[2 * v6 - 2 + v6], i) < 0) && (i[1] & 0x30) != 48;
+        i += 3 )
+    {
+    if ( ++v6 >= v5 )
+        return v3;
+    }
+}
+return (unsigned int)-1073741811;
+}
+return a2 != 0 ? 0xC000000D : 0;
 ````
----
+**32 byte Struct Info & Convertor**
+````cpp
+// Ntoskrnl.exe
+// IDA, Local Types
 
-## 🧪  Demonstration Script
+00000000 _RTL_FEATURE_CONFIGURATION struc ; (sizeof=0xC, align=0x4)
+00000000 FeatureId       dd ?        ; 0x0, 4 bytes Feature identifier
+00000004 Option          dw ?        ; 0x4, 2 bytes packed bitfield of options
+00000006 padding         dw ?        ; 0x6, 2 bytes alignment padding
+00000008 VariantPayload  dd ?        ; 0x8, 4 bytes payload value
+0000000C _RTL_FEATURE_CONFIGURATION ends
 
-The following demo showcases the full lifecycle of feature manipulation across both RTL and WNF stacks.
+// construct Using fcon.dll
+// __int64 __fastcall StagingControls_SetFeatureEnabledState
+// // __int64 __fastcall StorageWriter::SetFeatureStates(struct _RTL_FEATURE_CONFIGURATION_UPDATE *a1, unsigned __int64 a2, const unsigned __int16 *a3)
 
-```powershell
-Clear-Host
-Write-Host
+#pragma pack(push, 1)
+struct _RTL_FEATURE_CONFIGURATION_UPDATE {
+    // --- Header / Metadata (Offsets 0x00 - 0x07) ---
+    // StorageWriter accesses these via *((uint32_t*)i - 2) and -1
+    /* 0x00 */ uint32_t FeatureId;           // The ID of the feature
+    /* 0x04 */ uint32_t ChangeMask;          // Logic Bitmask (1=State, 2=Variant)
 
-# Feature List
-$Variant    = 0,1,2
-$Feature    = 57517687, 58755790, 59064570
-$UserPath   = "HKLM:\SYSTEM\CurrentControlSet\Control\FeatureManagement\Overrides\8"
-$PolicyPath = 'HKLM:SYSTEM\CurrentControlSet\Policies\Microsoft\FeatureManagement\Overrides'
+    // --- Active Data Area (Offsets 0x08 - 0x1B) ---
+    // StorageWriter starts its loop pointer 'i' exactly here (+8)
+    /* 0x08 */ uint32_t EnabledState;        // *i -> "EnabledState"
+    /* 0x0C */ uint32_t EnabledStateOptions; // *(i + 1) -> "EnabledStateOptions"
+    
+    /* 0x10 */ uint8_t  Variant;             // i[8] -> "Variant"
+    /* 0x11 */ uint8_t  Reserved[3];         // Padding to align next DWORD
+    
+    /* 0x14 */ uint32_t VariantPayloadKind;  // *(i + 3) -> "VariantPayloadKind"
+    /* 0x18 */ uint32_t VariantPayload;      // *(i + 4) -> "VariantPayload"
 
-Set-FeatureConfiguration   -Feature $Feature -Action Reset -Mode User   | Out-Null
-Set-FeatureConfiguration   -Feature $Feature -Action Reset -Mode Policy | Out-Null
+    // --- Trailing Metadata (Offsets 0x1C - 0x1F) ---
+    /* 0x1C */ uint32_t ConfigurationKind;   // The Hive (e.g., 8 for User)
+}; 
+// Static assert to ensure the ">> 5" (32-byte) stride logic holds true
+static_assert(sizeof(_RTL_FEATURE_CONFIGURATION_UPDATE) == 32, "Struct must be exactly 32 bytes");
+#pragma pack(pop)
 
-Write-Host "  * FCON, Mode: Enabled, Variants`n" -ForegroundColor Green
-Modify-StagingControls        -Feature $Feature -State Default                   | Out-Null
-Modify-StagingControls        -Feature $Feature -State Enabled                   | Out-Null
-Modify-StagingControlVariants -Feature $Feature -State Enabled -Variant $Variant | Out-Null
+// fcon.dll, BAse info ^ Offsets
+// __int64 __fastcall StagingControls_SetFeatureEnabledState
 
-Get-ChildItem $UserPath -ea 0 | % { Get-ItemProperty $_.PSPath } | 
-    Format-Table @{n='FeatureId';e='PSChildName';a='Center';w=15}, 
-                 @{n='State';e='EnabledState';a='Center';w=10}, 
-                 @{n='Variant';e='Variant';a='Center';w=10}, 
-                 @{n='Kind';e='VariantPayloadKind';a='Center';w=10}, 
-                 @{n='Payload';e='VariantPayload';a='Center';w=10}
+if ( (*((_BYTE *)v7 + 32) & 1) != 0 )
+{
+if ( v12 == v25 )
+{
+    std::vector<_RTL_FEATURE_CONFIGURATION_UPDATE>::_Emplace_reallocate<_RTL_FEATURE_CONFIGURATION_UPDATE>(
+    (const void **)v31,
+    v25,
+    v7);
+    v12 = (struct _RTL_FEATURE_CONFIGURATION_UPDATE *)v32;
+    v25 = v31[1];
+}
+else
+{
+    *(_OWORD *)v25 = *(_OWORD *)v7;
+    *((_OWORD *)v25 + 1) = *((_OWORD *)v7 + 1);
+    v25 = (struct _RTL_FEATURE_CONFIGURATION_UPDATE *)((char *)v25 + 32);
+    v31[1] = v25;
+}
+}
+v7 = (struct RtlFeatureUpdate *)((char *)v7 + 40);
+--v6;
+}
+while ( v6 );
+v18 = v31[0];
+}
+v26 = RtlSetFeatureConfigurations(a5, 1i64, v18, (v25 - v18) >> 5);
 
-Write-Host "  * RTL, User/Kernel Mode: Enable & Set Variant" -ForegroundColor Green
-Set-FeatureConfiguration -Feature $Feature -Variant $Variant -Action Enable -Mode User   -Store Runtime | Out-Null
-Set-FeatureConfiguration -Feature $Feature -Variant $Variant -Action Enable -Mode Policy -Store Runtime | Out-Null
+// fcon.dll, BAse info ^ Offsets
+// __int64 __fastcall StorageWriter::SetFeatureStates(struct _RTL_FEATURE_CONFIGURATION_UPDATE *a1, unsigned __int64 a2, const unsigned __int16 *a3)
 
-$Overrides = Get-ChildItem $UserPath -ea 0
-$UserQuery = Query-FeatureConfiguration -Feature $Feature
-$KernelQuery = Query-KernelFeatureState -Feature $Feature -ApplyFlags
+__int64 __fastcall StorageWriter::SetFeatureStates(
+        struct _RTL_FEATURE_CONFIGURATION_UPDATE *a1,
+        unsigned __int64 a2,
+        const unsigned __int16 *a3)
+{
+  __int64 v3; // rsi
+  char *i; // rdi
+  __int64 v7; // rdx
+  __int64 v8; // rcx
+  int v9; // eax
+  signed int v10; // ebx
+  LSTATUS v11; // eax
+  LSTATUS v12; // eax
+  LSTATUS v13; // eax
+  LSTATUS v14; // eax
+  LSTATUS v15; // eax
+  unsigned __int64 v17; // r9
+  __int64 v18; // rdx
+  int lpData; // [rsp+20h] [rbp-10h]
+  wil::details::in1diag3 *retaddr; // [rsp+68h] [rbp+38h]
+  int Data; // [rsp+78h] [rbp+48h] BYREF
+  HKEY hKey; // [rsp+88h] [rbp+58h] BYREF
 
-$Overrides | % { Get-ItemProperty $_.PSPath } | Format-Table `
-    @{Expression="PSChildName";         Label="Feature ID";    Alignment="Center"; Width=15},
-    @{Expression="EnabledState";        Label="State";         Alignment="Center"; Width=12},
-    @{Expression="EnabledStateOptions"; Label="Options";       Alignment="Center"; Width=15},
-    @{Expression="Variant";             Label="Variant";       Alignment="Center"; Width=10},
-    @{Expression="VariantPayload";      Label="Payload";       Alignment="Center"; Width=15},
-    @{Expression="VariantPayloadKind";  Label="Kind";          Alignment="Center"; Width=10}
+  v3 = 0i64;
+  if ( !a2 )
+    return 0i64;
+  for ( i = (char *)a1 + 8; ; i += 32 )
+  {
+    v7 = *((unsigned int *)i - 2);
+    v8 = *((unsigned int *)i - 1);
+    hKey = 0i64;
+    v9 = StorageWriter::CreateFeatureKey(v8, v7, &hKey, a3);
+    v10 = v9;
+    if ( v9 < 0 )
+      break;
+    Data = *(_DWORD *)i;
+    v11 = RegSetValueExW(hKey, L"EnabledState", 0, 4u, (const BYTE *)&Data, 4u);
+    v10 = (unsigned __int16)v11 | 0x80070000;
+    if ( v11 <= 0 )
+      v10 = v11;
+    if ( v10 < 0 )
+    {
+      v17 = (unsigned int)v10;
+      v18 = 473i64;
+      goto LABEL_29;
+    }
+    Data = *((_DWORD *)i + 1);
+    v12 = RegSetValueExW(hKey, L"EnabledStateOptions", 0, 4u, (const BYTE *)&Data, 4u);
+    v10 = (unsigned __int16)v12 | 0x80070000;
+    if ( v12 <= 0 )
+      v10 = v12;
+    if ( v10 < 0 )
+    {
+      v17 = (unsigned int)v10;
+      v18 = 474i64;
+      goto LABEL_29;
+    }
+    Data = (unsigned __int8)i[8];
+    v13 = RegSetValueExW(hKey, L"Variant", 0, 4u, (const BYTE *)&Data, 4u);
+    v10 = (unsigned __int16)v13 | 0x80070000;
+    if ( v13 <= 0 )
+      v10 = v13;
+    if ( v10 < 0 )
+    {
+      v17 = (unsigned int)v10;
+      v18 = 475i64;
+      goto LABEL_29;
+    }
+    Data = *((_DWORD *)i + 3);
+    v14 = RegSetValueExW(hKey, L"VariantPayloadKind", 0, 4u, (const BYTE *)&Data, 4u);
+    v10 = (unsigned __int16)v14 | 0x80070000;
+    if ( v14 <= 0 )
+      v10 = v14;
+    if ( v10 < 0 )
+    {
+      v17 = (unsigned int)v10;
+      v18 = 476i64;
+      goto LABEL_29;
+    }
+    Data = *((_DWORD *)i + 4);
+    v15 = RegSetValueExW(hKey, L"VariantPayload", 0, 4u, (const BYTE *)&Data, 4u);
+    v10 = (unsigned __int16)v15 | 0x80070000;
+    if ( v15 <= 0 )
+      v10 = v15;
+    if ( v10 < 0 )
+    {
+      v17 = (unsigned int)v10;
+      v18 = 477i64;
+      goto LABEL_29;
+    }
+    if ( hKey )
+      RegCloseKey(hKey);
+    if ( ++v3 >= a2 )
+      return 0i64;
+  }
+  v17 = (unsigned int)v9;
+  v18 = 471i64;
+LABEL_29:
+  wil::details::in1diag3::Return_Hr(
+    retaddr,
+    (void *)v18,
+    (unsigned int)"onecore\\base\\flighting\\featuremanagement\\libs\\featurestatewriter\\storagewriter.cpp",
+    (const char *)v17,
+    lpData);
+  if ( hKey )
+    RegCloseKey(hKey);
+  return (unsigned int)v10;
+}
 
-Write-Host "  * Query, Mode:User" -ForegroundColor Green
-$UserQuery | Format-Table @{Expression="FeatureId"; Alignment="Center"; Width=15},
-             @{Expression="Priority"; Alignment="Center"; Width=10},
-             @{Expression="EnabledState"; Alignment="Center"; Width=15},
-             @{Expression="Variant"; Alignment="Center"; Width=10},
-             @{Expression="VariantPayloadKind"; Alignment="Center"; Width=20},
-             @{Expression="IsWexpConfiguration"; Alignment="Center"; Width=20},
-             @{Expression="HasSubscriptions"; Alignment="Center"; Width=18}
+// ntoskrnl.exe, Packer<>Unpacker 32<>12
+// __int64 __fastcall RtlpFcUpdateFeature(__int64 a1, __int64 a2)
 
-Write-Host "  * Query, Mode:Kernel" -ForegroundColor Green
-$KernelQuery | Format-Table @{Expression="FeatureId"; Alignment="Center"; Width=15},
-             @{Expression="Priority"; Alignment="Center"; Width=10},
-             @{Expression="EnabledState"; Alignment="Center"; Width=15},
-             @{Expression="Variant"; Alignment="Center"; Width=10},
-             @{Expression="VariantPayloadKind"; Alignment="Center"; Width=20},
-             @{Expression="IsWexpConfiguration"; Alignment="Center"; Width=20},
-             @{Expression="HasSubscriptions"; Alignment="Center"; Width=18}
+{
+    int v2; // eax
+    int v5; // ecx
+    int v6; // edx
+    __int64 result; // rax
 
+    v2 = *(_DWORD *)(a2 + 28);
+    if ( (v2 & 1) != 0 )
+    {
+    *(_DWORD *)(a1 + 4) ^= (*(_DWORD *)(a1 + 4) ^ (16 * *(_DWORD *)(a2 + 8))) & 0x30;
+    v2 = *(_DWORD *)(a2 + 28);
+    }
+    if ( (v2 & 2) != 0 )
+    {
+    *(_DWORD *)(a1 + 4) ^= (*(_DWORD *)(a1 + 4) ^ (*(unsigned __int8 *)(a2 + 16) << 8)) & 0x3F00;
+    v5 = *(_DWORD *)(a1 + 4);
+    *(_DWORD *)(a1 + 8) = *(_DWORD *)(a2 + 24);
+    v6 = v5 ^ ((unsigned __int16)v5 ^ (unsigned __int16)((unsigned __int16)*(_DWORD *)(a2 + 20) << 14)) & 0xC000;
+    *(_DWORD *)(a1 + 4) = v6;
+    }
+    else
+    {
+    v6 = *(_DWORD *)(a1 + 4);
+    }
+    result = v6 ^ ((unsigned __int8)v6 ^ (unsigned __int8)((unsigned __int8)*(_DWORD *)(a2 + 12) << 6)) & 0x40u;
+    *(_DWORD *)(a1 + 4) = result;
+    return result;
+}
 
-Write-Host "  * WNF, Mode: Enable`n" -ForegroundColor Green
-Set-WnfFeatureConfig   -Store User    -Mode Enable -Feature $Feature | Out-Null
-Set-WnfFeatureConfig   -Store Machine -Mode Enable -Feature $Feature | Out-Null
-$wnfUser =  Query-WnfFeatureConfig -Store User    -Feature $Feature
-$wnfQuery = Query-WnfFeatureConfig -Store Machine -Feature $Feature
+// Winload.exe, Registry to 12 Bytes Struct [Skip 32 translate]
+// __int64 __fastcall FsepPopulateFeatureConfiguration(__int64 a1, __int64 *a2, __int64 a3, __int64 a4)
 
-# Formatted User Store
-$wnfUser | Format-Table `
-    @{Expression="FeatureId";    Label="FeatureId";    Alignment="Center"; Width=15},
-    @{Expression="ServiceState"; Label="Priority";     Alignment="Center"; Width=10}, 
-    @{Expression="StateText";    Label="EnabledState"; Alignment="Center"; Width=15}, 
-    @{Expression="Payload";      Label="Variant";      Alignment="Center"; Width=10},
-    @{Expression="Kind";         Label="PayloadKind";  Alignment="Center"; Width=20},
-    @{Expression="InVariantList";Label="WexpConfig";   Alignment="Center"; Width=20},
-    @{Expression={ $false };     Label="Subscriptions";Alignment="Center"; Width=18}
+{
+  int v7; // ebp
+  int v8; // r14d
+  int i; // edx
+  __int64 v10; // rcx
+  bool v11; // zf
+  unsigned int v12; // ebx
+  int v13; // ebx
+  __int64 result; // rax
+  UNICODE_STRING String2; // [rsp+30h] [rbp-28h] BYREF
 
-# Formatted Machine Store
-$wnfQuery | Format-Table `
-    @{Expression="FeatureId";    Label="FeatureId";    Alignment="Center"; Width=15},
-    @{Expression="ServiceState"; Label="Priority";     Alignment="Center"; Width=10}, 
-    @{Expression="StateText";    Label="EnabledState"; Alignment="Center"; Width=15}, 
-    @{Expression="Payload";      Label="Variant";      Alignment="Center"; Width=10},
-    @{Expression="Kind";         Label="PayloadKind";  Alignment="Center"; Width=20},
-    @{Expression="InVariantList";Label="WexpConfig";   Alignment="Center"; Width=20},
-    @{Expression={ $false };     Label="Subscriptions";Alignment="Center"; Width=18}
-
-return
-```
-
----
-
-## 📝 Capability Matrix
-
-| Feature | RTL Engine | WNF Engine |
-| :--- | :---: | :---: |
-| **Persistence** | Permanent (Registry) | Volatile (Memory) |
-| **Instant UI Update** | No | **Yes** |
-| **A/B Test Override** | High | Medium |
-| **Requires Reboot** | Sometimes | **Never** |
-
----
-
-## ⚠️ Safety & Compatibility
-* **Requirements:** Windows 10 Build 18963+ or Windows 11.
-* **Privileges:** **Administrator Privileges Required** for both Registry (HKLM) and WNF Machine store access.
-```
+  v7 = a1;
+  if ( a1 && a2 && *a2 && a4 )
+  {
+    v8 = 0;
+    for ( i = 0; ; i = v8 )
+    {
+      result = FsepEnumerateValueKey(a1, i, a3, (_DWORD)a2, a3);
+      if ( (_DWORD)result == -2147483622 )
+        return 0i64;
+      if ( (int)result < 0 )
+        return result;
+      v10 = *a2;
+      *(_DWORD *)(&String2.MaximumLength + 1) = 0;
+      v11 = *(_DWORD *)(v10 + 4) == 4;
+      String2.Buffer = (wchar_t *)(v10 + 20);
+      String2.Length = *(_WORD *)(v10 + 16);
+      String2.MaximumLength = String2.Length;
+      if ( v11 && *(_DWORD *)(v10 + 12) == 4 )
+      {
+        v12 = *(_DWORD *)(*(unsigned int *)(v10 + 8) + v10);
+        if ( RtlEqualUnicodeString(&EnabledStateValueName, &String2, 1u) )
+        {
+          if ( v12 > 2 )
+            goto LABEL_24;
+          v13 = (*(_DWORD *)(a4 + 4) ^ (16 * v12)) & 0x30;
+          goto LABEL_12;
+        }
+        if ( RtlEqualUnicodeString(&IsEnabledStateOptionsValueName, &String2, 1u) )
+        {
+          if ( v12 <= 1 )
+          {
+            v13 = (*(_DWORD *)(a4 + 4) ^ (v12 << 6)) & 0x40;
+LABEL_12:
+            *(_DWORD *)(a4 + 4) ^= v13;
+          }
+        }
+        else if ( RtlEqualUnicodeString(&VariantValueName, &String2, 1u) )
+        {
+          if ( v12 < 0x40 )
+          {
+            v13 = (*(_DWORD *)(a4 + 4) ^ (v12 << 8)) & 0x3F00;
+            goto LABEL_12;
+          }
+        }
+        else if ( RtlEqualUnicodeString(&VariantPayloadKindValueName, &String2, 1u) )
+        {
+          if ( v12 < 4 )
+          {
+            v13 = (*(_DWORD *)(a4 + 4) ^ (v12 << 14)) & 0xC000;
+            goto LABEL_12;
+          }
+        }
+        else if ( RtlEqualUnicodeString(&VariantPayloadValueName, &String2, 1u) )
+        {
+          *(_DWORD *)(a4 + 8) = v12;
+        }
+      }
+LABEL_24:
+      ++v8;
+      LODWORD(a1) = v7;
+    }
+  }
+  return 3221225485i64;
+}
+````
