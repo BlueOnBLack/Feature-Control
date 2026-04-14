@@ -2687,14 +2687,15 @@ function Query-WnfFeatureConfig {
 Clear-Host
 Write-Host
 
-# Feature List
+# Set Feature List
 $Variant    = 0,1,2
 $Feature    = 57517687, 58755790, 59064570
 $UserPath   = "HKLM:\SYSTEM\CurrentControlSet\Control\FeatureManagement\Overrides\8"
 $PolicyPath = 'HKLM:SYSTEM\CurrentControlSet\Policies\Microsoft\FeatureManagement\Overrides'
 
-Set-FeatureConfiguration   -Feature $Feature -Action Reset -Mode User   | Out-Null
-Set-FeatureConfiguration   -Feature $Feature -Action Reset -Mode Policy | Out-Null
+# Reset Features list
+Set-FeatureConfiguration      -Feature $Feature -Action Reset -Mode User   | Out-Null
+Set-FeatureConfiguration      -Feature $Feature -Action Reset -Mode Policy | Out-Null
 
 Write-Host "  * FCON, Mode: Enabled, Variants`n" -ForegroundColor Green
 Modify-StagingControls        -Feature $Feature -State Default                   | Out-Null
@@ -2744,10 +2745,10 @@ $KernelQuery | Format-Table @{Expression="FeatureId"; Alignment="Center"; Width=
 
 
 Write-Host "  * WNF, Mode: Enable`n" -ForegroundColor Green
-Set-WnfFeatureConfig   -Store User    -Mode Enable -Feature $Feature | Out-Null
-Set-WnfFeatureConfig   -Store Machine -Mode Enable -Feature $Feature | Out-Null
-$wnfUser =  Query-WnfFeatureConfig -Store User    -Feature $Feature
-$wnfQuery = Query-WnfFeatureConfig -Store Machine -Feature $Feature
+Set-WnfFeatureConfig -Store User    -Mode Enable   -Feature $Feature | Out-Null
+Set-WnfFeatureConfig -Store Machine -Mode Enable   -Feature $Feature | Out-Null
+$wnfUser =  Query-WnfFeatureConfig  -Store User    -Feature $Feature
+$wnfQuery = Query-WnfFeatureConfig  -Store Machine -Feature $Feature
 
 # Formatted User Store
 $wnfUser | Format-Table `
