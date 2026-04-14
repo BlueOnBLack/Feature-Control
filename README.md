@@ -213,44 +213,133 @@ Variant Override	RTL_STAGING_VARIANT_ENTRY	12 Bytes	ModifyStagingControlVariants
 ````
 ---
 
+### 🧠 rtl Api Set | Internal Feature Control API
+**Struct Information**
+```cpp
+* RTL_FEATURE_CONFIGURATION_UPDATE - NtDoc
+* https://ntdoc.m417z.com/rtl_feature_configuration_update
+
+* _RTL_FEATURE_CONFIGURATION
+* https://ntdoc.m417z.com/rtl_feature_configuration
+* https://www.vergiliusproject.com/kernels/x64/windows-10/21h1/_RTL_FEATURE_CONFIGURATION
+
+typedef struct _KERNEL_FEATURE_TABLE {
+
+    /* 0x00 */ UINT64 ChangeStamp;      // Global sequence number for updates
+    
+    // --- Boot Section (Block 1) ---
+    /* 0x08 */ UINT64 Boot_STAMP;       // Section-specific version/stamp (HeaderFlags)
+    /* 0x10 */ HANDLE Boot_Handle;      // Section object handle
+    /* 0x18 */ UINT64 Boot_Size;        // Total bytes in the section
+    
+    // --- Runtime Section (Block 2) ---
+    /* 0x20 */ UINT64 Runtime_STAMP;    // Section-specific stamp
+    /* 0x28 */ HANDLE Runtime_Handle;   // Section object handle
+    /* 0x30 */ UINT64 Runtime_Size;     // Total bytes in the section
+    
+    // --- Default Section (Block 3) ---
+    /* 0x38 */ UINT64 Default_STAMP;    // Section-specific stamp
+    /* 0x40 */ HANDLE Default_Handle;   // Section object handle
+    /* 0x48 */ UINT64 Default_Size;     // Total bytes in the section
+
+} KERNEL_FEATURE_TABLE, *PKERNEL_FEATURE_TABLE;
+
+typedef enum _RTL_FEATURE_CONFIGURATION_PRIORITY {
+    ImageDefault        = 0,
+    EKB                 = 1,
+    Safeguard           = 2,
+    Persistent          = 2,  // same as Safeguard
+    Reserved3           = 3,
+    Service             = 4,
+    Reserved5           = 5,
+    Dynamic             = 6,
+    Reserved7           = 7,
+    User                = 8,
+    Security            = 9,
+    UserPolicy          = 0xA,
+    ConfigurationSystem = 0xB,
+    Test                = 0xC,
+    Reserved13          = 0xD,
+    Reserved14          = 0xE,
+    ImageOverride       = 0xF,
+    Max                 = 0xF
+} RTL_FEATURE_CONFIGURATION_PRIORITY;
+
+typedef enum _SYSTEM_FEATURE_CONFIGURATION_SECTION_TYPE {
+    Boot          = 0,
+    Runtime       = 1,
+    UsageTriggers = 2,
+    Count         = 3
+} SYSTEM_FEATURE_CONFIGURATION_SECTION_TYPE;
+
+
+typedef enum _RTL_FEATURE_CONFIGURATION_PRIORITY
+{
+} RTL_FEATURE_CONFIGURATION_PRIORITY, * PRTL_FEATURE_CONFIGURATION_PRIORITY;
+typedef enum _RTL_FEATURE_ENABLED_STATE
+{
+} RTL_FEATURE_ENABLED_STATE;
+typedef enum _RTL_FEATURE_VARIANT_PAYLOAD_KIND
+{
+} RTL_FEATURE_VARIANT_PAYLOAD_KIND, * PRTL_FEATURE_VARIANT_PAYLOAD_KIND;
+typedef enum _RTL_FEATURE_CONFIGURATION_OPERATION
+{
+} RTL_FEATURE_CONFIGURATION_OPERATION, * PRTL_FEATURE_CONFIGURATION_OPERATION;
+
+typedef struct __RTL_FEATURE_CONFIGURATION_UPDATE 
+{
+    /* 0x00 */ ULONG FeatureId;         // Unique ID
+    /* 0x04 */ ULONG SourcePriority;    // User(1), Service(2), Image(3)
+    /* 0x08 */ ULONG TargetState;       // 0:Default, 1:Off, 2:On
+
+    /* 0x0C */ ULONG ConfigurationKind; // Known as VariantPayloadKind
+
+    /* 0x10 */ UCHAR BaseVariant;       // The "DefaultState" / Primary 6-bit Slot
+    /* 0x11 */ UCHAR Reserved[3];       // Alignment
+
+    /* 0x14 */ union {
+        ULONG RawFlags;
+        struct {
+            ULONG Unused          : 1;
+            ULONG IsGroupBypass   : 1;  // Forces state regardless of A/B group
+            ULONG Reserved        : 12;
+            ULONG ExtendedVariant : 2;  // The "High Slot" (Bits 14-15)
+            ULONG PendingUpgrade  : 1;  // ChangeTimeUpgrade
+            ULONG Unused2         : 15;
+        } Bits;
+    } ControlFlags;
+
+    /* 0x18 */ ULONG PayloadValue;      // The actual data (Threshold/Timeout)
+    /* 0x1C */ ULONG UpdateAction;      // 0:Update, 1:Delete, 2:Commit
+} _RTL_FEATURE_CONFIGURATION_UPDATE;
+
+//0xc bytes (sizeof)
+struct _RTL_FEATURE_CONFIGURATION
+{
+    ULONG FeatureId;                   //0x0
+    ULONG Priority:4;                  //0x4
+    ULONG EnabledState:2;              //0x4
+    ULONG IsWexpConfiguration:1;       //0x4
+    ULONG HasSubscriptions:1;          //0x4
+    ULONG Variant:6;                   //0x4
+    ULONG VariantPayloadKind:2;        //0x4
+    ULONG VariantPayload;              //0x8
+};
+
+00000000 _RTL_FEATURE_CONFIGURATION struc ; (sizeof=0xC, align=0x4)
+00000000 FeatureId       dd ?        ; 0x0, 4 bytes Feature identifier
+00000004 Option          dw ?        ; 0x4, 2 bytes packed bitfield of options
+00000006 padding         dw ?        ; 0x6, 2 bytes alignment padding
+00000008 VariantPayload  dd ?        ; 0x8, 4 bytes payload value
+0000000C _RTL_FEATURE_CONFIGURATION ends
+```
+---
+
 ### 💻 C++ Decode / Encode Implementation
 This demo uses standard intrinsic-style rotations (`_rotl`, `_rotr`).
 
 ```cpp
-#include <iostream>
-#include <intrin.h>
-#include <windows.h>
-#include <vector>
-
-struct TestCase {
-    uint32_t decoded;
-    uint32_t encoded;
-};
-
-int main()
-{
-    std::vector<TestCase> tests = {
-        { 57517687U, 4011992206U },
-        { 58992578U, 2216818319U },
-        { 58755790U, 2642149007U },
-        { 59064570U, 4109366415U }
-    };
-    std::cout << "Starting validation for " << tests.size() << " cases...\n";
-    std::cout << "--------------------------------------------------\n";
-    for (const auto& test : tests) {
-        uint32_t resultDecoded = _byteswap_ulong(_rotl(test.encoded ^ 0x833EA8FF, (255 % 32)) ^ 0x8FB23D4F) ^ 0x74161A4E;
-        uint32_t resultEncoded = _rotr(_byteswap_ulong(test.decoded ^ 0x74161A4E) ^ 0x8FB23D4F, (255 % 32)) ^ 0x833EA8FF;
-
-        std::cout << "Test Decoded " << test.decoded << ": "
-            << (resultDecoded == test.decoded ? "  [PASS]" : "  [FAIL]") << "\n";
-        std::cout << "Test Encoded " << test.encoded << ": "
-            << (resultEncoded == test.encoded ? "[PASS]" : "[FAIL]") << "\n";
-        std::cout << "--------------------------------------------------\n";
-    }
-
-    return 0;
-}
-```
+````
 ---
 
 ## 🧪  Demonstration Script
