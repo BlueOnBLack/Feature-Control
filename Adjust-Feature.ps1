@@ -366,23 +366,19 @@ function Modify-StagingControlVariants {
 #endregion
 #region "Feature, RTL"
 
+# ViVe \ ViVeTool GUI
+# https://github.com/thebookisclosed/ViVe
+# https://github.com/PeterStrick/ViVeTool-GUI
+
+# phnt Headers [private]
+# https://github.com/winsiderss/systeminformer
+# https://github.com/winsiderss/systeminformer/blob/master/phnt/include/ntrtl.h
+
+# Consumer_ESU_Enrollment.ps1
+# https://github.com/abbodi1406/ConsumerESU/blob/master/Consumer_ESU_Enrollment.ps1
+
+# Encode / Decode Registry
 <#
-Based on ViveTool Source code.
-namespace --> Albacore.ViVeTool
-
-@ ViVe \ ViVeTool GUI
-@ https://github.com/thebookisclosed/ViVe
-@ https://github.com/PeterStrick/ViVeTool-GUI
-
-@ phnt Headers [private]
-@ https://github.com/winsiderss/systeminformer
-@ https://github.com/winsiderss/systeminformer/blob/master/phnt/include/ntrtl.h
-
-@ Consumer_ESU_Enrollment.ps1
-@ https://github.com/abbodi1406/ConsumerESU/blob/master/Consumer_ESU_Enrollment.ps1
-
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
 </
 $Path = "C:\Windows\System32"
 $Extensions = @("*.exe", "*.dll", "*.sys")
@@ -515,11 +511,16 @@ Write-Host "--- Feature ID Translation ---" -ForegroundColor Cyan
 [String]::Format("Decoded: {0}   (Expected: {1})   - Match: {2}", $FinalDecoded, $DecodedID, ($FinalDecoded -eq $DecodedID))
 [String]::Format("Encoded: {0} (Expected: {1}) - Match: {2}", $FinalEncoded, $EncodedID, ($FinalEncoded -eq $EncodedID))
 Write-Host
+#>
 
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# Struct Information
+<#
+* RTL_FEATURE_CONFIGURATION_UPDATE - NtDoc
+* https://ntdoc.m417z.com/rtl_feature_configuration_update
 
-(Query-KernelFeatureState -Store Runtime).Count -eq (Query-FeatureConfiguration -OutList -Store Runtime).Count == MATCH
-(Query-KernelFeatureState -Store Boot).Count    -eq (Query-FeatureConfiguration -OutList -Store Boot).Count    == MATCH
+* _RTL_FEATURE_CONFIGURATION
+* https://ntdoc.m417z.com/rtl_feature_configuration
+* https://www.vergiliusproject.com/kernels/x64/windows-10/21h1/_RTL_FEATURE_CONFIGURATION
 
 typedef struct _KERNEL_FEATURE_TABLE {
 
@@ -541,11 +542,6 @@ typedef struct _KERNEL_FEATURE_TABLE {
     /* 0x48 */ UINT64 Default_Size;     // Total bytes in the section
 
 } KERNEL_FEATURE_TABLE, *PKERNEL_FEATURE_TABLE;
-
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-* RTL_FEATURE_CONFIGURATION_UPDATE - NtDoc
-* https://ntdoc.m417z.com/rtl_feature_configuration_update
 
 typedef enum _RTL_FEATURE_CONFIGURATION_PRIORITY {
     ImageDefault        = 0,
@@ -616,23 +612,6 @@ typedef struct __RTL_FEATURE_CONFIGURATION_UPDATE
     /* 0x1C */ ULONG UpdateAction;      // 0:Update, 1:Delete, 2:Commit
 } _RTL_FEATURE_CONFIGURATION_UPDATE;
 
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    
-* _RTL_FEATURE_CONFIGURATION
-* https://ntdoc.m417z.com/rtl_feature_configuration
-* https://www.vergiliusproject.com/kernels/x64/windows-10/21h1/_RTL_FEATURE_CONFIGURATION
-
--- Same version, just compact one, 
--- instead of 32 bytes, just 12 bytes
-
-[DllImport("ntdll.dll")]
-public static extern int RtlQueryFeatureConfiguration(
-    uint featureId,
-    RTL_FEATURE_CONFIGURATION_TYPE featureConfigurationType,
-    ref ulong changeStamp,
-    out RTL_FEATURE_CONFIGURATION featureConfiguration
-);
-
 //0xc bytes (sizeof)
 struct _RTL_FEATURE_CONFIGURATION
 {
@@ -646,62 +625,55 @@ struct _RTL_FEATURE_CONFIGURATION
     ULONG VariantPayload;              //0x8
 };
 
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+00000000 _RTL_FEATURE_CONFIGURATION struc ; (sizeof=0xC, align=0x4)
+00000000 FeatureId       dd ?        ; 0x0, 4 bytes Feature identifier
+00000004 Option          dw ?        ; 0x4, 2 bytes packed bitfield of options
+00000006 padding         dw ?        ; 0x6, 2 bytes alignment padding
+00000008 VariantPayload  dd ?        ; 0x8, 4 bytes payload value
+0000000C _RTL_FEATURE_CONFIGURATION ends
+#>
 
-### User Mode (Ring 3) Implementation
+# Struct Rules
+<#
+// ntoskrnl.exe
+// __int64 __fastcall RtlpFcValidateFeatureConfigurationBuffer(unsigned int *a1, ULONGLONG a2)
 
-**1. Kernel-Mode (Ring 0) - The Compact Truth**
-* **Format:** 12-byte `RTL_FEATURE_CONFIGURATION` structure.
-* **Goal:** Memory conservation. Because the Kernel must track thousands of features in the System Paged Pool, it uses bitfields to keep the footprint small.
-* **Storage:** The Enable State is not a standalone field; it is "hidden" inside a 32-bit Flags DWORD using specific bit-offsets.
-* **Access:** Requires bitwise masks (&) and XOR operations to update without disturbing neighboring bits.
+unsigned int v3; // r10d
+unsigned int *v4; // r11
+unsigned int v5; // r9d
+unsigned int v6; // r8d
+_DWORD *i; // rdx
+ULONGLONG pullResult; // [rsp+30h] [rbp+8h] BYREF
 
-**2. User-Mode (Ring 3) - The Expanded Truth**
-* **Format:** 32-byte `WIL_FEATURE_STATE` or `RTL_FEATURE_CONFIGURATION_UPDATE` structure.
-* **Goal:** Developer efficiency and execution speed.
-* **Storage:** The Enable State is expanded into a full 32-bit DWORD. In an update descriptor, this is at **Offset 0x08**. In a query result, it is moved to **Offset 0x00**.
-* **Access:** Can be read directly by code (e.g., if (state == 2)) without any complex bit-shifting logic required by the caller.
-
-### Summary of Offset Mapping
-
-| Logic Role       | 32-Byte Staging Offset (Packer) | Kernel Bit-Slot (Storage) | 32-Byte Result Offset (Unpacker) |
-| :--------------  | :----------------------------- | :------------------------ | :-------------------------------  |
-| **Enable State** | **0x08** | Bits 4-5            | 0x00                      |                                   |
-| **Variant ID**   | **0x10** | Bits 8-13           | 0x04                      |                                   |
-| **Payload Kind** | 0x0C (High Bits)               | Bits 14-15                | 0x08                              |
-| **Payload Value**| 0x18                           | Direct Offset 0x08        | 0x0C                              |
-
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-// RTL_FEATURE_CONFIGURATION
-
-typedef struct _RTL_FEATURE_CONFIGURATION_UPDATE
+pullResult = 0i64;
+if ( a1 )
 {
-    /* 0x00 */ ULONG FeatureId;         // Unique ID
-    /* 0x04 */ ULONG SourcePriority;    // User(1), Service(2), Image(3)
-    /* 0x08 */ ULONG TargetState;       // 0:Default, 1:Off, 2:On
+if ( a2 >= 4
+    && ((unsigned __int8)a1 & 3) == 0
+    && RtlULongLongMult(*a1, 0xCui64, &pullResult) >= 0
+    && pullResult + 4 >= pullResult
+    && pullResult + 4 <= a2 )
+{
+    v5 = *v4;
+    v6 = v3;
+    if ( !*v4 )
+    return v3;
+    for ( i = v4 + 1;
+        (!v6 || (int)RtlFcpCompareFeatureToFeature(&v4[2 * v6 - 2 + v6], i) < 0) && (i[1] & 0x30) != 48;
+        i += 3 )
+    {
+    if ( ++v6 >= v5 )
+        return v3;
+    }
+}
+return (unsigned int)-1073741811;
+}
+return a2 != 0 ? 0xC000000D : 0;
 
-    /* 0x0C */ ULONG ConfigurationKind; // Known as VariantPayloadKind
+#>
 
-    /* 0x10 */ UCHAR BaseVariant;       // The "DefaultState" / Primary 6-bit Slot
-    /* 0x11 */ UCHAR Reserved[3];       // Alignment
-
-    /* 0x14 */ union {
-        ULONG RawFlags;
-        struct {
-            ULONG Unused          : 1;
-            ULONG IsGroupBypass   : 1;  // Forces state regardless of A/B group
-            ULONG Reserved        : 12;
-            ULONG ExtendedVariant : 2;  // The "High Slot" (Bits 14-15)
-            ULONG PendingUpgrade  : 1;  // ChangeTimeUpgrade
-            ULONG Unused2         : 15;
-        } Bits;
-    } ControlFlags;
-
-    /* 0x18 */ ULONG PayloadValue;      // The actual data (Threshold/Timeout)
-    /* 0x1C */ ULONG UpdateAction;      // 0:Update, 1:Delete, 2:Commit
-} _RTL_FEATURE_CONFIGURATION_UPDATE;
-
+# 32 Struct Info & Convertor
+<#
 // Ntoskrnl.exe
 // IDA, Local Types
 
@@ -776,89 +748,37 @@ if ( ++v3 >= a2 )
   return 0i64;
 }
 
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// ntoskrnl.exe, Packer<>Unpacker 32<>12
+// __int64 __fastcall RtlpFcUpdateFeature(__int64 a1, __int64 a2)
 
-Both functions converge on the same 12-byte Kernel structure using identical bitwise logic.
-
-1. Logic Mapping and Bit-Field Destination
-
-- Property: EnabledState
-  Registry: EnabledState
-  32-byte Offset: 0x08
-  12-byte Destination: Offset 0x04, Bits 4-5 (Shift 4, Mask 0x30)
-
-- Property: WEXP Options
-  Registry: IsEnabledStateOptions
-  32-byte Offset: 0x0C
-  12-byte Destination: Offset 0x04, Bit 6 (Shift 6, Mask 0x40)
-
-- Property: Variant ID
-  Registry: Variant
-  32-byte Offset: 0x10
-  12-byte Destination: Offset 0x04, Bits 8-13 (Shift 8, Mask 0x3F00)
-
-- Property: Payload Kind
-  Registry: VariantPayloadKind
-  32-byte Offset: 0x14
-  12-byte Destination: Offset 0x04, Bits 14-15 (Shift 14, Mask 0xC000)
-
-- Property: Payload Data
-  Registry: VariantPayload
-  32-byte Offset: 0x18
-  12-byte Destination: Offset 0x08, Bits 0-31 (Full DWORD)
-
-2. Core Functional Difference
-
-Winload (FsepPopulateFeatureConfiguration):
-- Directly compiles Registry strings into the 12-byte table.
-- Enforces a Variant limit of 63 (0x3F).
-- Operates during boot to establish the initial system state.
-
-NTOS Kernel (RtlpFcUpdateFeature):
-- Patches the existing 12-byte table using a 32-byte command buffer.
-- Uses a Change Mask at offset 0x1C to selectively update fields.
-- Bit 1 set: Updates State.
-- Bit 2 set: Updates Variant, Kind, and Payload.
-
-3. The 12-Byte Truth
-The Kernel only consumes the 12-byte result. Offset 0x00 is the Scrambled ID, Offset 0x04 contains all bit-packed flags (including the Priority in bits 0-3), and Offset 0x08 is the raw 32-bit payload data.
-
-  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-
-// ntoskrnl.exe -> [Rules]
-// __int64 __fastcall RtlpFcValidateFeatureConfigurationBuffer(unsigned int *a1, ULONGLONG a2)
-
-unsigned int v3; // r10d
-unsigned int *v4; // r11
-unsigned int v5; // r9d
-unsigned int v6; // r8d
-_DWORD *i; // rdx
-ULONGLONG pullResult; // [rsp+30h] [rbp+8h] BYREF
-
-pullResult = 0i64;
-if ( a1 )
 {
-if ( a2 >= 4
-    && ((unsigned __int8)a1 & 3) == 0
-    && RtlULongLongMult(*a1, 0xCui64, &pullResult) >= 0
-    && pullResult + 4 >= pullResult
-    && pullResult + 4 <= a2 )
-{
-    v5 = *v4;
-    v6 = v3;
-    if ( !*v4 )
-    return v3;
-    for ( i = v4 + 1;
-        (!v6 || (int)RtlFcpCompareFeatureToFeature(&v4[2 * v6 - 2 + v6], i) < 0) && (i[1] & 0x30) != 48;
-        i += 3 )
+    int v2; // eax
+    int v5; // ecx
+    int v6; // edx
+    __int64 result; // rax
+
+    v2 = *(_DWORD *)(a2 + 28);
+    if ( (v2 & 1) != 0 )
     {
-    if ( ++v6 >= v5 )
-        return v3;
+    *(_DWORD *)(a1 + 4) ^= (*(_DWORD *)(a1 + 4) ^ (16 * *(_DWORD *)(a2 + 8))) & 0x30;
+    v2 = *(_DWORD *)(a2 + 28);
     }
+    if ( (v2 & 2) != 0 )
+    {
+    *(_DWORD *)(a1 + 4) ^= (*(_DWORD *)(a1 + 4) ^ (*(unsigned __int8 *)(a2 + 16) << 8)) & 0x3F00;
+    v5 = *(_DWORD *)(a1 + 4);
+    *(_DWORD *)(a1 + 8) = *(_DWORD *)(a2 + 24);
+    v6 = v5 ^ ((unsigned __int16)v5 ^ (unsigned __int16)((unsigned __int16)*(_DWORD *)(a2 + 20) << 14)) & 0xC000;
+    *(_DWORD *)(a1 + 4) = v6;
+    }
+    else
+    {
+    v6 = *(_DWORD *)(a1 + 4);
+    }
+    result = v6 ^ ((unsigned __int8)v6 ^ (unsigned __int8)((unsigned __int8)*(_DWORD *)(a2 + 12) << 6)) & 0x40u;
+    *(_DWORD *)(a1 + 4) = result;
+    return result;
 }
-return (unsigned int)-1073741811;
-}
-return a2 != 0 ? 0xC000000D : 0;
 
 // Winload.exe, Registry to 12 Bytes Struct [Skip 32 translate]
 // __int64 __fastcall FsepPopulateFeatureConfiguration(__int64 a1, __int64 *a2, __int64 a3, __int64 a4)
@@ -938,42 +858,10 @@ LABEL_24:
   }
   return 3221225485i64;
 }
+#>
 
-
-// ntoskrnl.exe, Packer<>Unpacker 32<>12
-// __int64 __fastcall RtlpFcUpdateFeature(__int64 a1, __int64 a2)
-
-{
-    int v2; // eax
-    int v5; // ecx
-    int v6; // edx
-    __int64 result; // rax
-
-    v2 = *(_DWORD *)(a2 + 28);
-    if ( (v2 & 1) != 0 )
-    {
-    *(_DWORD *)(a1 + 4) ^= (*(_DWORD *)(a1 + 4) ^ (16 * *(_DWORD *)(a2 + 8))) & 0x30;
-    v2 = *(_DWORD *)(a2 + 28);
-    }
-    if ( (v2 & 2) != 0 )
-    {
-    *(_DWORD *)(a1 + 4) ^= (*(_DWORD *)(a1 + 4) ^ (*(unsigned __int8 *)(a2 + 16) << 8)) & 0x3F00;
-    v5 = *(_DWORD *)(a1 + 4);
-    *(_DWORD *)(a1 + 8) = *(_DWORD *)(a2 + 24);
-    v6 = v5 ^ ((unsigned __int16)v5 ^ (unsigned __int16)((unsigned __int16)*(_DWORD *)(a2 + 20) << 14)) & 0xC000;
-    *(_DWORD *)(a1 + 4) = v6;
-    }
-    else
-    {
-    v6 = *(_DWORD *)(a1 + 4);
-    }
-    result = v6 ^ ((unsigned __int8)v6 ^ (unsigned __int8)((unsigned __int8)*(_DWORD *)(a2 + 12) << 6)) & 0x40u;
-    *(_DWORD *)(a1 + 4) = result;
-    return result;
-}
-
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
+# Base Packer <> Unpacker
+<#
 // fcon.dll ==> [Stupid Packer]
 // __int64 __fastcall StagingControls_EnumerateFeatures__lambda_025e1f4f593c8987aee57b4ee711a6c5____(_BYTE ***a1)
 
@@ -1014,7 +902,10 @@ HIDWORD(v28) = v12 & 0xF | (16 * (v8[1] & 3 | (4 * (v8[2] & 1 | (4 * (((v8[4] & 
     // WEXP (Windows Experience) check bit
     *(_DWORD *)(a1 + 20) = (v14 >> 6) & 1;              // Source: Offset 0x0C (Bit 6) at RTL_FEATURE_CONFIGURATION_UPDATE
 }
+#>
 
+# Kernel Unpacker
+<#
 // ntoskrnl.exe --> [Kernel Unpacker]
 // __int64 __fastcall wil_details_StagingConfig_QueryFeatureState(__int64 a1, __int64 a2, int a3, int a4)
 
@@ -1171,20 +1062,9 @@ _BOOL8 __fastcall wil_details_StagingConfigFeature_HasUniqueState(_DWORD *a1)
   }
   return result;
 }
-
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-* _RTL_FEATURE_ENABLED_STATE_OPTIONS
-* https://www.vergiliusproject.com/kernels/x64/windows-11/24h2/_RTL_FEATURE_ENABLED_STATE_OPTIONS
-
-//0x4 bytes (sizeof)
-enum _RTL_FEATURE_ENABLED_STATE_OPTIONS
-{
-    FeatureEnabledStateOptionsNone = 0,
-    FeatureEnabledStateOptionsWexpConfig = 1
-};
 #>
 
+# Base opeartion
 Function Init-RTL {
     
     # Define the KERNEL FEATURE TABLE struct
@@ -1360,7 +1240,7 @@ function Write-FeatureData {
         [ValidateSet(0,1)]
         [int]$PackedOptions = 0x0,
         
-        #[ValidateRange(0, 15)]
+        [ValidateRange(0, 63)]
         [int]$Variant = 0x0,
 
         [ValidateSet(0,1)]
@@ -1396,12 +1276,25 @@ function Write-FeatureData {
     $data[8]  = [byte]$EnabledState
 
     # Windows Experience Configuration Slot
-    $data[12] = $IsWexpConfiguration
+    $data[12] = [byte]$IsWexpConfiguration
+    
+    if ($Variant -gt 15) {
+        
+        # Option: PURE VARIANT (Legacy/fcon style)
+        # Preservation: Keeps all 6 bits of the Variant (up to 63).
+        # Consequence: Overwrites the 3-Bucket state (Bits 8-13).
+        $data[16] = [byte]($Variant -band 0x3F)
+        
+        Write-Warning "Variant > 15: Overwriting Buckets 8-13. State preserved at 0x08."
 
-    # Modern Hybrid Byte (0x10)
-    # The Hybrid Byte (Offset 0x10) - ONLY for State/Variant
-    # We keep this CLEAN (Bits 0-5 only) to avoid the & 0x3F00 mask error
-    $data[16] = (($EnabledState -band 0x03) -shl 4) -bor ($Variant -band 0x3F)
+    } else {
+        
+        # Option: HYBRID (Modern/Hybrid style)
+        # Preservation: Keeps both State and Variant.
+        # Logic: State in Bits 4-5 (Policy), Variant in Bits 0-3 (Low Var).
+        $data[16] = [byte]((($EnabledState -band 0x03) -shl 4) -bor ($Variant -band 0x0F))
+
+    }
 
     $ptr = [IntPtr]::Add($UpdatePackage, ($BaseOffset + (0x20 * $Index)))
     [Marshal]::Copy($data, 0, $ptr, 32)
@@ -1733,7 +1626,6 @@ function Set-FeatureConfiguration {
     this reader may report 'Default' because it does not walk the Priority 
     Bucket stack (Bits 8, 10, 12) used by ntoskrnl.exe.
 #>
-
 function Get-FeatureObjectFromPtr {
     param(
         [IntPtr]$Pointer,
@@ -1930,7 +1822,6 @@ Function Query-FeatureConfiguration {
     at Bits 8-13. This is the "Absolute Truth" of what the Kernel is actually 
     executing, regardless of what the UI reports.
 #>
-
 function Get-KernelObjectFromPtr {
     param(
         [IntPtr]$Pointer,
@@ -2169,6 +2060,101 @@ function Query-KernelFeatureState {
         }
         [Marshal]::FreeHGlobal($pIn)
         [Marshal]::FreeHGlobal($pOut)
+    }
+}
+
+# Unified Version
+function Parse-GeatureObject {
+    param(
+        [IntPtr]$Pointer,
+        [byte[]]$Buffer,
+        [bool]$ApplyMaskingFlag = $false,  # Kernel a4 / v5 logic
+        [uint32]$GlobalMask = 0            # Kernel bitmask logic
+    )
+
+    # 1. Byte Extraction (Bypass sign-bit crashes)
+    if ($Buffer) {
+        $fId   = [BitConverter]::ToUInt32($Buffer, 0)
+        $flags = [uint32]([BitConverter]::ToUInt32($Buffer, 4))
+        $vPay  = [BitConverter]::ToUInt32($Buffer, 8)
+    } else {
+        $rawId    = [Marshal]::ReadInt32($Pointer, 0)
+        $rawFlags = [Marshal]::ReadInt32($Pointer, 4)
+        $rawPay   = [Marshal]::ReadInt32($Pointer, 8)
+        $fId   = [BitConverter]::ToUInt32([BitConverter]::GetBytes($rawId), 0)
+        $flags = [uint32]([BitConverter]::ToUInt32([BitConverter]::GetBytes($rawFlags), 0))
+        $vPay  = [uint32]([BitConverter]::ToUInt32([BitConverter]::GetBytes($rawPay), 0))
+    }
+
+    $originalFlags = $flags
+
+    # 2. Kernel Masking Stage (LABEL_10 Logic)
+    if ($ApplyMaskingFlag) {
+        if ($GlobalMask -band 0x4) { $flags = $flags -band 0xFFFFCFFF } # Clear Policy (12-13)
+        if ($GlobalMask -band 0x2) { $flags = $flags -band 0xFFFFF3FF } # Clear Override (10-11)
+        if ($GlobalMask -band 0x1) { $flags = $flags -band 0xFFFFFCFF } # Clear Base (8-9)
+        if ($GlobalMask -band 0x8) {
+            $flags = $flags -band 0xC0FFFFFF  # Clear Variant + Payload Metadata
+            $vPay  = 0                        # Clear Payload
+        }
+    }
+
+    # 3. HasUniqueState Gatekeeper (wil_details_...HasUniqueState)
+    $v1 = $flags
+    $checkBuckets  = (($v1 -bor (($v1 -bor ($v1 -shr 2)) -shr 2)) -band 0x300) -ne 0
+    $checkVariant  = ($v1 -band 0x3F000000) -ne 0
+    $checkModified = ($v1 -band 2) -ne 0
+    $hasUniqueState = ($fId -ne 0) -and ($checkBuckets -or $checkVariant -or $checkModified)
+
+    # 4. Priority Resolution Logic (v24/v25 logic)
+    $stateSrv = ($flags -shr 12) -band 0x3
+    $stateOvr = ($flags -shr 10) -band 0x3
+    $stateDef = ($flags -shr 8)  -band 0x3
+
+    $rawState = 0
+    if ($hasUniqueState) {
+        if ($stateSrv -ne 0) { $rawState = $stateSrv }
+        elseif ($stateOvr -ne 0) { $rawState = $stateOvr }
+        elseif ($stateDef -ne 0) { $rawState = $stateDef }
+    }
+
+    # 5. Build Result Object
+    $StateLookup = @{ 0 = 'Default'; 1 = 'Disabled'; 2 = 'Enabled' }
+    
+    return [psObject]@{
+        FeatureId          = $fId
+        HasUniqueState     = $hasUniqueState
+        
+        # --- Resolved State (The Kernel's Decision) ---
+        EnabledState       = if ($StateLookup.ContainsKey([int]$rawState)) { $StateLookup[[int]$rawState] } else { "N/A" }
+        EnabledStateRaw    = [int]$rawState
+        
+        # --- The Priority Ladder ---
+        State_Policy       = $stateSrv
+        State_Override     = $stateOvr
+        State_Default      = $stateDef
+
+        # --- Variant Duality ---
+        # Kernel Variant (High Byte)
+        K_Variant          = (($flags -shr 24) -band 0x3F) -band 0x1F
+        # User Variant (Second Byte)
+        U_Variant          = ($flags -shr 8) -band 0x3F
+        
+        # --- Flags & Metadata ---
+        IsWexp             = [bool](($flags -shr 6) -band 0x1)
+        HasSubscriptions   = [bool](($flags -shr 7) -band 0x1)
+        IsServiceManaged   = [bool](($flags -band 0x2) -ne 0)
+        Priority           = $flags -band 0xF
+        
+        # --- Payload Details ---
+        VariantPayload     = '0x{0:X8}' -f $vPay
+        PayloadKind        = ($flags -shr 14) -band 0x3
+        PayloadMetadata    = ($flags -shr 30) -band 0x3
+        
+        # --- Debug Information ---
+        FlagsRaw           = '0x{0:X8}' -f $originalFlags
+        FlagsEffective     = '0x{0:X8}' -f $flags
+        MaskApplied        = '0x{0:X}' -f $GlobalMask
     }
 }
 
@@ -2587,13 +2573,19 @@ $PolicyPath = 'HKLM:SYSTEM\CurrentControlSet\Policies\Microsoft\FeatureManagemen
 Set-FeatureConfiguration   -Feature $Feature -Action Reset -Mode User   | Out-Null
 Set-FeatureConfiguration   -Feature $Feature -Action Reset -Mode Policy | Out-Null
 
-#Write-Host "FCON, Mode: Enabled, Variants`n" -ForegroundColor Green
-#Modify-StagingControls        -Feature $Feature -State Default                   | Out-Null
-#Modify-StagingControls        -Feature $Feature -State Enabled                   | Out-Null
-#Modify-StagingControlVariants -Feature $Feature -State Enabled -Variant $Variant | Out-Null
-#Get-ChildItem $UserPath -ea 0 | % { Get-ItemProperty $_.PSPath } | Select-Object PSChildName, EnabledState, EnabledStateOptions, Variant, VariantPayload, VariantPayloadKind | Format-Table
+Write-Host "  * FCON, Mode: Enabled, Variants`n" -ForegroundColor Green
+Modify-StagingControls        -Feature $Feature -State Default                   | Out-Null
+Modify-StagingControls        -Feature $Feature -State Enabled                   | Out-Null
+Modify-StagingControlVariants -Feature $Feature -State Enabled -Variant $Variant | Out-Null
 
-Write-Host "RTL, User/Kernel Mode: Enable & Set Variant" -ForegroundColor Cyan
+Get-ChildItem $UserPath -ea 0 | % { Get-ItemProperty $_.PSPath } | 
+    Format-Table @{n='FeatureId';e='PSChildName';a='Center';w=15}, 
+                 @{n='State';e='EnabledState';a='Center';w=10}, 
+                 @{n='Variant';e='Variant';a='Center';w=10}, 
+                 @{n='Kind';e='VariantPayloadKind';a='Center';w=10}, 
+                 @{n='Payload';e='VariantPayload';a='Center';w=10}
+
+Write-Host "  * RTL, User/Kernel Mode: Enable & Set Variant" -ForegroundColor Green
 Set-FeatureConfiguration -Feature $Feature -Variant $Variant -Action Enable -Mode User   -Store Runtime | Out-Null
 Set-FeatureConfiguration -Feature $Feature -Variant $Variant -Action Enable -Mode Policy -Store Runtime | Out-Null
 
@@ -2601,7 +2593,7 @@ $Overrides = Get-ChildItem $UserPath -ea 0
 $UserQuery = Query-FeatureConfiguration -Feature $Feature
 $KernelQuery = Query-KernelFeatureState -Feature $Feature -ApplyFlags
 
-$Overrides | ForEach-Object { Get-ItemProperty $_.PSPath } | Format-Table `
+$Overrides | % { Get-ItemProperty $_.PSPath } | Format-Table `
     @{Expression="PSChildName";         Label="Feature ID";    Alignment="Center"; Width=15},
     @{Expression="EnabledState";        Label="State";         Alignment="Center"; Width=12},
     @{Expression="EnabledStateOptions"; Label="Options";       Alignment="Center"; Width=15},
@@ -2609,7 +2601,7 @@ $Overrides | ForEach-Object { Get-ItemProperty $_.PSPath } | Format-Table `
     @{Expression="VariantPayload";      Label="Payload";       Alignment="Center"; Width=15},
     @{Expression="VariantPayloadKind";  Label="Kind";          Alignment="Center"; Width=10}
 
-Write-Host "Query, Mode: User" -ForegroundColor Green
+Write-Host "  * Query, Mode:User" -ForegroundColor Green
 $UserQuery | Format-Table @{Expression="FeatureId"; Alignment="Center"; Width=15},
              @{Expression="Priority"; Alignment="Center"; Width=10},
              @{Expression="EnabledState"; Alignment="Center"; Width=15},
@@ -2618,7 +2610,7 @@ $UserQuery | Format-Table @{Expression="FeatureId"; Alignment="Center"; Width=15
              @{Expression="IsWexpConfiguration"; Alignment="Center"; Width=20},
              @{Expression="HasSubscriptions"; Alignment="Center"; Width=18}
 
-Write-Host "Query, Mode: Kernel" -ForegroundColor Magenta
+Write-Host "  * Query, Mode:Kernel" -ForegroundColor Green
 $KernelQuery | Format-Table @{Expression="FeatureId"; Alignment="Center"; Width=15},
              @{Expression="Priority"; Alignment="Center"; Width=10},
              @{Expression="EnabledState"; Alignment="Center"; Width=15},
@@ -2627,10 +2619,30 @@ $KernelQuery | Format-Table @{Expression="FeatureId"; Alignment="Center"; Width=
              @{Expression="IsWexpConfiguration"; Alignment="Center"; Width=20},
              @{Expression="HasSubscriptions"; Alignment="Center"; Width=18}
 
-# Write-Host "WNF, Mode: Enable`n" -ForegroundColor Green
-# Set-WnfFeatureConfig   -Store User    -Mode Enable -Feature $Feature | Out-Null
-# Set-WnfFeatureConfig   -Store Machine -Mode Enable -Feature $Feature | Out-Null
-# Query-WnfFeatureConfig -Store User    -Feature $Feature
-# Query-WnfFeatureConfig -Store Machine -Feature $Feature
+Write-Host "  * WNF, Mode: Enable`n" -ForegroundColor Green
+Set-WnfFeatureConfig   -Store User    -Mode Enable -Feature $Feature | Out-Null
+Set-WnfFeatureConfig   -Store Machine -Mode Enable -Feature $Feature | Out-Null
+$wnfUser =  Query-WnfFeatureConfig -Store User    -Feature $Feature
+$wnfQuery = Query-WnfFeatureConfig -Store Machine -Feature $Feature
+
+# Formatted User Store
+$wnfUser | Format-Table `
+    @{Expression="FeatureId";    Label="FeatureId";    Alignment="Center"; Width=15},
+    @{Expression="ServiceState"; Label="Priority";     Alignment="Center"; Width=10}, 
+    @{Expression="StateText";    Label="EnabledState"; Alignment="Center"; Width=15}, 
+    @{Expression="Payload";      Label="Variant";      Alignment="Center"; Width=10},
+    @{Expression="Kind";         Label="PayloadKind";  Alignment="Center"; Width=20},
+    @{Expression="InVariantList";Label="WexpConfig";   Alignment="Center"; Width=20},
+    @{Expression={ $false };     Label="Subscriptions";Alignment="Center"; Width=18}
+
+# Formatted Machine Store
+$wnfQuery | Format-Table `
+    @{Expression="FeatureId";    Label="FeatureId";    Alignment="Center"; Width=15},
+    @{Expression="ServiceState"; Label="Priority";     Alignment="Center"; Width=10}, 
+    @{Expression="StateText";    Label="EnabledState"; Alignment="Center"; Width=15}, 
+    @{Expression="Payload";      Label="Variant";      Alignment="Center"; Width=10},
+    @{Expression="Kind";         Label="PayloadKind";  Alignment="Center"; Width=20},
+    @{Expression="InVariantList";Label="WexpConfig";   Alignment="Center"; Width=20},
+    @{Expression={ $false };     Label="Subscriptions";Alignment="Center"; Width=18}
 
 return
