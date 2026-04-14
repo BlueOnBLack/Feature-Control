@@ -205,7 +205,7 @@ typedef struct _KERNEL_FEATURE_TABLE {
 ```
 ---
 
-### 🧠 FCON feature Api Set | Internal Feature Control API
+# 🧠 FCON Feature Control – Internal API Notes
 
 This documentation details the low-level structures and exported functions found in `fcon.dll` used for managing Windows Feature Configuration (Staging).
 
