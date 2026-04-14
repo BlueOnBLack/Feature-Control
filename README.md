@@ -272,3 +272,307 @@ Standard Override	RTL_STAGING_FEATURE_ENTRY	8 Bytes	  ModifyStagingControls
 Variant Override	RTL_STAGING_VARIANT_ENTRY	12 Bytes	ModifyStagingControlVariants
 ````
 ---
+
+# 🧠 RTL Feature Control – Internal API Notes (Clean Git-Style Summary)
+
+---
+
+## 📦 1. Core Structures (12-byte runtime + 32-byte update)
+
+### _RTL_FEATURE_CONFIGURATION (12 bytes)
+
+Source:
+
+* ntoskrnl.exe (runtime table)
+* winload.exe (registry loader)
+
+What it does:
+
+* Compact runtime representation (bit-packed flags + payload)
+
+Key layout:
+
+```
+FeatureId
+[bitfield @ +4]:
+  - Priority (4)
+  - EnabledState (2)
+  - Variant (6)
+  - VariantPayloadKind (2)
+VariantPayload
+```
+
+---
+
+### _RTL_FEATURE_CONFIGURATION_UPDATE (32 bytes)
+
+Source:
+
+* fcon.dll → StagingControls_SetFeatureEnabledState
+* fcon.dll → StorageWriter::SetFeatureStates
+
+What it does:
+
+* Expanded "user-mode" update structure
+* Later packed → 12-byte kernel struct
+
+Key layout:
+
+```
+FeatureId
+ChangeMask
+
+EnabledState
+EnabledStateOptions
+Variant
+VariantPayloadKind
+VariantPayload
+
+ConfigurationKind
+```
+
+---
+
+## 🔁 2. 32 → 12 BYTE PACKER (Kernel)
+
+### ntoskrnl.exe → RtlpFcUpdateFeature
+
+What it does:
+
+* Converts 32-byte update → 12-byte runtime struct
+* Applies ChangeMask logic
+
+Key logic:
+
+```
+if (ChangeMask & 1)
+    EnabledState -> bits 4-5
+
+if (ChangeMask & 2)
+    Variant -> bits 8-13
+    PayloadKind -> bits 14-15
+    Payload -> +8
+```
+
+---
+
+## 🔁 3. USERMODE PACKER
+
+### fcon.dll → StagingControls_EnumerateFeatures__lambda
+
+What it does:
+
+* Builds compact bitfield manually (bad/“stupid” packer)
+
+Key logic:
+
+```
+flags =
+  priority
+  | (enabled << 4)
+  | (options << 6)
+  | (variant << 8)
+  | (payloadKind << 14)
+```
+
+---
+
+## 🔓 4. USERMODE UNPACKER
+
+### EditionUpgradeManagerObj.dll → wil_QueryFeatureState
+
+What it does:
+
+* Reads compact 12-byte entry → expands to readable fields
+
+Key extraction:
+
+```
+EnabledState  = (flags >> 4) & 3
+Variant       = (flags >> 8) & 0x3F
+PayloadKind   = (flags >> 14)
+Payload       = *(+12)
+```
+
+---
+
+## 🔓 5. KERNEL UNPACKER
+
+### ntoskrnl.exe → wil_details_StagingConfig_QueryFeatureState
+
+What it does:
+
+* Full kernel-side feature resolution
+* Applies masking rules + overrides
+
+Key behavior:
+
+```
+- Iterates feature table (12-byte entries)
+- Applies policy masks
+- Extracts:
+  state, variant, payload, flags
+```
+
+Helper:
+
+### wil_details_StagingConfigFeature_HasUniqueState
+
+```
+checks if feature has non-default state
+```
+
+---
+
+## 🧾 6. REGISTRY → STRUCT LOADER
+
+### winload.exe → FsepPopulateFeatureConfiguration
+
+What it does:
+
+* Converts registry values → 12-byte struct directly
+
+Handles:
+
+```
+"EnabledState"
+"EnabledStateOptions"
+"Variant"
+"VariantPayloadKind"
+"VariantPayload"
+```
+
+Bit writes:
+
+```
+state   -> bits 4-5
+options -> bit 6
+variant -> bits 8-13
+kind    -> bits 14-15
+payload -> +8
+```
+
+---
+
+## 💾 7. REGISTRY WRITER (USERMODE)
+
+### fcon.dll → StorageWriter::SetFeatureStates
+
+What it does:
+
+* Writes feature config into registry
+
+Writes:
+
+```
+EnabledState
+EnabledStateOptions
+Variant
+VariantPayloadKind
+VariantPayload
+```
+
+Flow:
+
+```
+CreateFeatureKey(...)
+RegSetValueExW(...)
+```
+
+---
+
+## 🧠 8. VALIDATION
+
+### ntoskrnl.exe → RtlpFcValidateFeatureConfigurationBuffer
+
+What it does:
+
+* Validates array of 12-byte entries
+
+Checks:
+
+```
+- alignment
+- size = count * 0xC
+- sorted order
+- no invalid flags
+```
+
+---
+
+## 📊 9. FEATURE TABLE
+
+### KERNEL_FEATURE_TABLE
+
+What it does:
+
+* Holds 3 sections:
+
+```
+Boot
+Runtime
+Default
+```
+
+Each:
+
+```
+STAMP
+HANDLE
+SIZE
+```
+
+---
+
+## 🎯 10. PRIORITY + SECTIONS
+
+### RTL_FEATURE_CONFIGURATION_PRIORITY
+
+What it does:
+
+* Defines override priority
+
+Examples:
+
+```
+User = 8
+Security = 9
+Dynamic = 6
+ImageOverride = 0xF
+```
+
+---
+
+### SYSTEM_FEATURE_CONFIGURATION_SECTION_TYPE
+
+```
+Boot
+Runtime
+UsageTriggers
+```
+
+---
+
+## ⚠️ KEY TAKEAWAYS
+
+* 32-byte struct = user-mode editing format
+* 12-byte struct = kernel runtime format
+* Packing = bitfield compression
+* Registry = persistence layer
+* Kernel = final authority
+
+---
+
+## 🔁 FULL FLOW
+
+```
+Registry <-> StorageWriter (fcon.dll)
+        -> 32-byte UPDATE
+        -> RtlpFcUpdateFeature (ntoskrnl.exe)
+        -> 12-byte STRUCT
+        -> Kernel Feature Table
+        -> wil_details_StagingConfig_QueryFeatureState
+```
+
+```
+```
