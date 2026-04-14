@@ -208,7 +208,7 @@ extern "C" HRESULT ModifyStagingControlVariants(
 
 🔗 Quick Summary
 Feature Type	Struct Used	Total Size	API Function
-Standard Override	RTL_STAGING_FEATURE_ENTRY	8 Bytes	ModifyStagingControls
+Standard Override	RTL_STAGING_FEATURE_ENTRY	8 Bytes	  ModifyStagingControls
 Variant Override	RTL_STAGING_VARIANT_ENTRY	12 Bytes	ModifyStagingControlVariants
 ````
 ---
