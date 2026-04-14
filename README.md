@@ -205,7 +205,6 @@ typedef struct _KERNEL_FEATURE_TABLE {
 ```
 ---
 
-```id="wnf-doc"
 # 🧠 WNF Feature Control – Internal API Notes
 
 This documents how Windows Feature Configuration is exposed through the  
@@ -228,13 +227,11 @@ This documents how Windows Feature Configuration is exposed through the
 
 ### WNF_FEATURE_ENTRY (12 bytes)
 
-```
 
 FeatureId
 PackedBits
 Payload
 
-```id="wnf12"
 
 It does:
 → represents **one feature in kernel format**  
@@ -244,13 +241,11 @@ It does:
 
 ### WNF_FEATURE_UPDATE (Header)
 
-```
 
 Version
 FeatureCount
 Properties
 
-```id="wnfhead"
 
 It does:
 → describes a **batch update**
@@ -260,14 +255,12 @@ It does:
 
 ### WNF_FEATURE_INFO (Parsed View)
 
-```
 
 FeatureId
 Service/User/Test states
 Kind
 Payload
 
-```id="wnfinfo"
 
 It does:
 → human-readable interpretation  
@@ -279,11 +272,9 @@ It does:
 
 ### ntdll.dll → NtQueryWnfStateData
 
-```
 
 NtQueryWnfStateData(...)
 
-```id="ntq"
 
 It does:
 → reads raw WNF blob  
@@ -293,11 +284,8 @@ It does:
 
 ### ntdll.dll → NtUpdateWnfStateData
 
-```
-
 NtUpdateWnfStateData(...)
 
-```id="ntu"
 
 It does:
 → writes feature updates into WNF  
@@ -341,7 +329,7 @@ bits 12-13 → TestState
 bits 30-31 → Kind
 Payload    → separate field
 
-```id="wnfbits"
+```
 
 It does:
 → stores **all priority layers at once**  
@@ -356,7 +344,7 @@ It does:
 
 Test > User > Service
 
-```id="priority"
+```
 
 It does:
 → highest non-zero wins  
@@ -375,7 +363,7 @@ Set-WnfFeatureConfig
 → WNF updated
 → kernel + WIL resolve state
 
-```id="flow2"
+```
 
 ---
 
@@ -389,7 +377,7 @@ NtQueryWnfStateData
 → extract bits
 → build readable objects
 
-```id="readflow"
+```
 
 ---
 
@@ -411,7 +399,7 @@ NtQueryWnfStateData
 User
 Machine
 
-```id="stores"
+```
 
 - Flags can **strip states or payloads** at runtime
 - Variant list stored separately (extra table)
@@ -426,7 +414,6 @@ Machine
 
 → You don’t set features directly  
 → You **write into WNF and let kernel decide**
-```
 ---
 
 # 🧠 FCON Feature Control – Internal API Notes
