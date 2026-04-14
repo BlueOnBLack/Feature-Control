@@ -202,13 +202,19 @@ $PolicyPath = 'HKLM:SYSTEM\CurrentControlSet\Policies\Microsoft\FeatureManagemen
 Set-FeatureConfiguration   -Feature $Feature -Action Reset -Mode User   | Out-Null
 Set-FeatureConfiguration   -Feature $Feature -Action Reset -Mode Policy | Out-Null
 
-#Write-Host "FCON, Mode: Enabled, Variants`n" -ForegroundColor Green
-#Modify-StagingControls        -Feature $Feature -State Default                   | Out-Null
-#Modify-StagingControls        -Feature $Feature -State Enabled                   | Out-Null
-#Modify-StagingControlVariants -Feature $Feature -State Enabled -Variant $Variant | Out-Null
-#Get-ChildItem $UserPath -ea 0 | % { Get-ItemProperty $_.PSPath } | Select-Object PSChildName, EnabledState, EnabledStateOptions, Variant, VariantPayload, VariantPayloadKind | Format-Table
+Write-Host "  * FCON, Mode: Enabled, Variants`n" -ForegroundColor Green
+Modify-StagingControls        -Feature $Feature -State Default                   | Out-Null
+Modify-StagingControls        -Feature $Feature -State Enabled                   | Out-Null
+Modify-StagingControlVariants -Feature $Feature -State Enabled -Variant $Variant | Out-Null
 
-Write-Host "RTL, User/Kernel Mode: Enable & Set Variant" -ForegroundColor Cyan
+Get-ChildItem $UserPath -ea 0 | % { Get-ItemProperty $_.PSPath } | 
+    Format-Table @{n='FeatureId';e='PSChildName';a='Center';w=15}, 
+                 @{n='State';e='EnabledState';a='Center';w=10}, 
+                 @{n='Variant';e='Variant';a='Center';w=10}, 
+                 @{n='Kind';e='VariantPayloadKind';a='Center';w=10}, 
+                 @{n='Payload';e='VariantPayload';a='Center';w=10}
+
+Write-Host "  * RTL, User/Kernel Mode: Enable & Set Variant" -ForegroundColor Green
 Set-FeatureConfiguration -Feature $Feature -Variant $Variant -Action Enable -Mode User   -Store Runtime | Out-Null
 Set-FeatureConfiguration -Feature $Feature -Variant $Variant -Action Enable -Mode Policy -Store Runtime | Out-Null
 
@@ -216,7 +222,7 @@ $Overrides = Get-ChildItem $UserPath -ea 0
 $UserQuery = Query-FeatureConfiguration -Feature $Feature
 $KernelQuery = Query-KernelFeatureState -Feature $Feature -ApplyFlags
 
-$Overrides | ForEach-Object { Get-ItemProperty $_.PSPath } | Format-Table `
+$Overrides | % { Get-ItemProperty $_.PSPath } | Format-Table `
     @{Expression="PSChildName";         Label="Feature ID";    Alignment="Center"; Width=15},
     @{Expression="EnabledState";        Label="State";         Alignment="Center"; Width=12},
     @{Expression="EnabledStateOptions"; Label="Options";       Alignment="Center"; Width=15},
@@ -224,7 +230,7 @@ $Overrides | ForEach-Object { Get-ItemProperty $_.PSPath } | Format-Table `
     @{Expression="VariantPayload";      Label="Payload";       Alignment="Center"; Width=15},
     @{Expression="VariantPayloadKind";  Label="Kind";          Alignment="Center"; Width=10}
 
-Write-Host "Query, Mode: User" -ForegroundColor Green
+Write-Host "  * Query, Mode:User" -ForegroundColor Green
 $UserQuery | Format-Table @{Expression="FeatureId"; Alignment="Center"; Width=15},
              @{Expression="Priority"; Alignment="Center"; Width=10},
              @{Expression="EnabledState"; Alignment="Center"; Width=15},
@@ -233,7 +239,7 @@ $UserQuery | Format-Table @{Expression="FeatureId"; Alignment="Center"; Width=15
              @{Expression="IsWexpConfiguration"; Alignment="Center"; Width=20},
              @{Expression="HasSubscriptions"; Alignment="Center"; Width=18}
 
-Write-Host "Query, Mode: Kernel" -ForegroundColor Magenta
+Write-Host "  * Query, Mode:Kernel" -ForegroundColor Green
 $KernelQuery | Format-Table @{Expression="FeatureId"; Alignment="Center"; Width=15},
              @{Expression="Priority"; Alignment="Center"; Width=10},
              @{Expression="EnabledState"; Alignment="Center"; Width=15},
@@ -242,11 +248,31 @@ $KernelQuery | Format-Table @{Expression="FeatureId"; Alignment="Center"; Width=
              @{Expression="IsWexpConfiguration"; Alignment="Center"; Width=20},
              @{Expression="HasSubscriptions"; Alignment="Center"; Width=18}
 
-# Write-Host "WNF, Mode: Enable`n" -ForegroundColor Green
-# Set-WnfFeatureConfig   -Store User    -Mode Enable -Feature $Feature | Out-Null
-# Set-WnfFeatureConfig   -Store Machine -Mode Enable -Feature $Feature | Out-Null
-# Query-WnfFeatureConfig -Store User    -Feature $Feature
-# Query-WnfFeatureConfig -Store Machine -Feature $Feature
+Write-Host "  * WNF, Mode: Enable`n" -ForegroundColor Green
+Set-WnfFeatureConfig   -Store User    -Mode Enable -Feature $Feature | Out-Null
+Set-WnfFeatureConfig   -Store Machine -Mode Enable -Feature $Feature | Out-Null
+$wnfUser =  Query-WnfFeatureConfig -Store User    -Feature $Feature
+$wnfQuery = Query-WnfFeatureConfig -Store Machine -Feature $Feature
+
+# Formatted User Store
+$wnfUser | Format-Table `
+    @{Expression="FeatureId";    Label="FeatureId";    Alignment="Center"; Width=15},
+    @{Expression="ServiceState"; Label="Priority";     Alignment="Center"; Width=10}, 
+    @{Expression="StateText";    Label="EnabledState"; Alignment="Center"; Width=15}, 
+    @{Expression="Payload";      Label="Variant";      Alignment="Center"; Width=10},
+    @{Expression="Kind";         Label="PayloadKind";  Alignment="Center"; Width=20},
+    @{Expression="InVariantList";Label="WexpConfig";   Alignment="Center"; Width=20},
+    @{Expression={ $false };     Label="Subscriptions";Alignment="Center"; Width=18}
+
+# Formatted Machine Store
+$wnfQuery | Format-Table `
+    @{Expression="FeatureId";    Label="FeatureId";    Alignment="Center"; Width=15},
+    @{Expression="ServiceState"; Label="Priority";     Alignment="Center"; Width=10}, 
+    @{Expression="StateText";    Label="EnabledState"; Alignment="Center"; Width=15}, 
+    @{Expression="Payload";      Label="Variant";      Alignment="Center"; Width=10},
+    @{Expression="Kind";         Label="PayloadKind";  Alignment="Center"; Width=20},
+    @{Expression="InVariantList";Label="WexpConfig";   Alignment="Center"; Width=20},
+    @{Expression={ $false };     Label="Subscriptions";Alignment="Center"; Width=18}
 
 return
 ```
