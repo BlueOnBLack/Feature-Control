@@ -387,8 +387,6 @@ bits 30-31 → Kind (payload type)
 * WNF acts as the **central feature data channel**
 * Kernel may override or mask values at runtime
 
-```
-``` 
 ---
 
 # 🧠 RTL Feature Control – Internal API Notes
