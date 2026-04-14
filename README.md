@@ -724,3 +724,206 @@ LABEL_24:
   return 3221225485i64;
 }
 ````
+
+**Base Packer <> Unpacker**
+````cpp
+// fcon.dll ==> [Stupid Packer]
+// __int64 __fastcall StagingControls_EnumerateFeatures__lambda_025e1f4f593c8987aee57b4ee711a6c5____(_BYTE ***a1)
+
+LODWORD(v28) = *(v8 - 1);
+v15 = v8[5];
+HIDWORD(v28) = v12 & 0xF | (16 * (v8[1] & 3 | (4 * (v8[2] & 1 | (4 * (((v8[4] & 3) << 6) | v8[3] & 0x3F))))));
+
+// EditionUpgradeManagerObj.dll --> [Stupid Unpacker]
+// __int64 __fastcall wil_QueryFeatureState(__int64 a1, unsigned int a2, int a3, int a4, _DWORD *a5, _DWORD *a6)
+
+{
+    ....
+    v14 = HIDWORD(v18); // Compact 32-bit 'Flags' from the 12-byte runtime entry
+    v10 = 1;
+    v15 = HIDWORD(v18);
+
+    // Writes to Offset 0x0C (12) of the local result buffer
+    // Matches the 32-bit payload data
+    *(_DWORD *)(a1 + 12) = v19;                         // Source: Offset 0x18 at RTL_FEATURE_CONFIGURATION_UPDATE
+
+    // Writes to Offset 0x08 (8) of the local result buffer
+    // Extracts Payload Kind (Resident/External) from top bits
+    *(_DWORD *)(a1 + 8) = (unsigned __int16)v15 >> 14;  // Source: Offset 0x0C (Bits 14-15) at RTL_FEATURE_CONFIGURATION_UPDATE
+
+    // Writes to Offset 0x00 (0) of the local result buffer
+    // ENABLED STATE: Extracted via right-shift 4, mask 3
+    *(_DWORD *)a1 = (v15 >> 4) & 3;                     // Source: Offset 0x08 at RTL_FEATURE_CONFIGURATION_UPDATE
+
+    // Writes to Offset 0x04 (4) of the local result buffer
+    // VARIANT: Extracted from second byte, mask 0x3F
+    *(_BYTE *)(a1 + 4) = BYTE1(v14) & 0x3F;             // Source: Offset 0x10 at RTL_FEATURE_CONFIGURATION_UPDATE
+
+    // Writes to Offset 0x10 (16) of the local result buffer
+    // Subscription check bit
+    *(_DWORD *)(a1 + 16) = (v14 >> 7) & 1;              // Source: Offset 0x0C (Bit 7) at RTL_FEATURE_CONFIGURATION_UPDATE
+
+    // Writes to Offset 0x14 (20) of the local result buffer
+    // WEXP (Windows Experience) check bit
+    *(_DWORD *)(a1 + 20) = (v14 >> 6) & 1;              // Source: Offset 0x0C (Bit 6) at RTL_FEATURE_CONFIGURATION_UPDATE
+````
+
+**Kernel Unpacker**
+````cpp
+/// ntoskrnl.exe --> [Kernel Unpacker]
+// __int64 __fastcall wil_details_StagingConfig_QueryFeatureState(__int64 a1, __int64 a2, int a3, int a4)
+
+{
+  __int64 v4; // r12
+  int v5; // r10d
+  __int64 v6; // r11
+  int v7; // ebx
+  __int64 v9; // rdi
+  unsigned int v10; // r9d
+  int v12; // r14d
+  unsigned int i; // esi
+  unsigned int v14; // r9d
+  unsigned int v15; // ecx
+  _DWORD *v16; // rax
+  __int64 result; // rax
+  __int64 v18; // rax
+  int v19; // eax
+  __int64 v20; // r8
+  int v21; // eax
+  __int64 v22; // xmm0_8
+  unsigned int v23; // r8d
+  int v24; // eax
+  int v25; // r8d
+  __int64 v26; // [rsp+20h] [rbp-10h] BYREF
+  int v27; // [rsp+28h] [rbp-8h]
+  int v28; // [rsp+70h] [rbp+40h]
+
+  v28 = a3;
+  v4 = *(_QWORD *)(a1 + 24);
+  v5 = 0;
+  v6 = *(_QWORD *)(a1 + 32);
+  v7 = 0;
+  v26 = 0i64;
+  v9 = a2;
+  v27 = 0;
+  v10 = *(unsigned __int16 *)(v4 + 4);
+  v12 = 0;
+  for ( i = 0; i < v10; ++i )
+  {
+    a2 = i;
+    if ( *(_DWORD *)(v6 + 12i64 * i) == a3 )
+    {
+      if ( a4 && *(_DWORD *)(a1 + 48) )
+      {
+        if ( (*(_DWORD *)(v6 + 12i64 * i + 4) & 1) == 0 )
+        {
+          v7 = *(_DWORD *)(v6 + 12i64 * i + 8);
+          v26 = *(_QWORD *)(v6 + 12i64 * i);
+          v27 = v7;
+          goto LABEL_10;
+        }
+      }
+      else
+      {
+        v21 = *(_DWORD *)(v6 + 12i64 * i + 4);
+        v12 = 1;
+        v22 = *(_QWORD *)(v6 + 12i64 * i);
+        v7 = *(_DWORD *)(v6 + 12i64 * i + 8);
+        v27 = v7;
+        v26 = v22;
+        if ( (v21 & 1) != 0 )
+          break;
+      }
+    }
+  }
+  v14 = 0;
+  if ( v12 )
+  {
+LABEL_10:
+    if ( !a4 || (v18 = 12i64, !*(_DWORD *)(a1 + 48)) )
+      v18 = 8i64;
+    v19 = *(_DWORD *)(v18 + v4);
+    if ( (v19 & 4) != 0 )
+    {
+      v20 = HIDWORD(v26) & 0xFFFFCFFF;
+      HIDWORD(v26) &= 0xFFFFCFFF;
+    }
+    else
+    {
+      v20 = HIDWORD(v26);
+    }
+    if ( (v19 & 2) != 0 )
+    {
+      v20 = (unsigned int)v20 & 0xFFFFF3FF;
+      HIDWORD(v26) = v20;
+    }
+    if ( (v19 & 1) != 0 )
+    {
+      v20 = (unsigned int)v20 & 0xFFFFFCFF;
+      HIDWORD(v26) = v20;
+    }
+    if ( (v19 & 8) != 0 )
+    {
+      v20 = (unsigned int)v20 & 0xC0FFFFFF;
+      v7 = 0;
+      HIDWORD(v26) = v20;
+      v27 = 0;
+    }
+    if ( (unsigned int)((__int64 (__fastcall *)(__int64 *, __int64, __int64, _QWORD))wil_details_StagingConfigFeature_HasUniqueState)(
+                         &v26,
+                         a2,
+                         v20,
+                         0i64) )
+    {
+      *(_DWORD *)(v9 + 12) = v7;
+      *(_DWORD *)(v9 + 8) = v23 >> 30;
+      *(_BYTE *)(v9 + 4) = HIBYTE(v23) & 0x3F;
+      *(_DWORD *)(v9 + 20) = (v23 >> 1) & 1;
+      v24 = (v23 >> 12) & 3;
+      if ( v24 || (v24 = (v23 >> 10) & 3) != 0 )
+      {
+        *(_DWORD *)v9 = v24;
+      }
+      else
+      {
+        v25 = (v23 >> 8) & 3;
+        if ( v25 )
+          *(_DWORD *)v9 = v25;
+      }
+      v14 = 1;
+    }
+    a3 = v28;
+  }
+  v15 = v5;
+  v16 = *(_DWORD **)(a1 + 40);
+  if ( *(_WORD *)(v4 + 6) )
+  {
+    while ( *v16 != a3 )
+    {
+      ++v15;
+      v16 += 4;
+      if ( v15 >= *(unsigned __int16 *)(v4 + 6) )
+        goto LABEL_4;
+    }
+    v5 = 1;
+  }
+LABEL_4:
+  result = v14;
+  *(_DWORD *)(v9 + 16) = v5;
+  return result;
+}
+_BOOL8 __fastcall wil_details_StagingConfigFeature_HasUniqueState(_DWORD *a1)
+{
+  unsigned int v1; // edx
+  _BOOL8 result; // rax
+
+  result = 0;
+  if ( *a1 )
+  {
+    v1 = a1[1];
+    if ( ((v1 | ((v1 | (v1 >> 2)) >> 2)) & 0x300) != 0 || (v1 & 0x3F000000) != 0 || (v1 & 2) != 0 )
+      return 1;
+  }
+  return result;
+}
+````
