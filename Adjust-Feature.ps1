@@ -186,6 +186,47 @@ function New-InMemoryModule {
 
     return $ModuleBuilder
 }
+function Print-Struct {
+    param(
+        [Parameter(Mandatory=$true)]
+        [Type]$StructType
+    )
+
+    $size = [Marshal]::SizeOf([Type]$StructType)
+    Write-Host ("Size: {0} bytes" -f $size) -ForegroundColor Green
+    Write-Host ("Name: {0}" -f $StructType.Name) -ForegroundColor Green
+
+    $fieldData = @()
+    foreach ($field in $StructType.GetFields()) {
+        $offset = [Marshal]::OffsetOf($StructType, $field.Name)
+    
+        $fieldData += [PSCustomObject]@{
+            FieldName = $field.Name
+            OffsetHex = "0x{0:X2}" -f $offset.ToInt32()
+            OffsetDec = $offset.ToInt32()
+            DataType  = $field.FieldType.Name
+        }
+    }
+
+    $fieldData | Format-Table -AutoSize -Property @{
+        Label = 'Field Name'
+        Expression = {$_.FieldName}
+    }, @{
+        Label = 'Data Type'
+        Expression = {$_.DataType}
+        Alignment = 'Center'
+    }, @{
+        Label = 'Offset (H)'
+        Expression = {$_.OffsetHex}
+        Alignment = 'Center'
+    }, @{
+        Label = 'Offset (D)'
+        Expression = {"{0:N0}" -f $_.OffsetDec}
+        Alignment = 'Center'
+    }
+
+    Write-Host
+}
 #endregion
 
 # Fcon = Feature Configuration library (lives in System32) // Registry Part, On first Boot, using Winload.exe
