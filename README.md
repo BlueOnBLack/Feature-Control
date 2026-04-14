@@ -173,6 +173,7 @@ typedef struct _RTL_STAGING_VARIANT_ENTRY {
     uint8_t  Variant;      // 0x08: The variant index to apply
     uint8_t  Reserved2[3]; // 0x09: Alignment padding to 12 bytes
 } RTL_STAGING_VARIANT_ENTRY;
+
 🛠 API Information (C++)
 These functions are exported by fcon.dll and are responsible for committing the structure arrays into the system state.
 
@@ -204,6 +205,7 @@ extern "C" HRESULT ModifyStagingControlVariants(
     void* Buffer,
     uint8_t  WipeExisting
 );
+
 🔗 Quick Summary
 Feature Type	Struct Used	Total Size	API Function
 Standard Override	RTL_STAGING_FEATURE_ENTRY	8 Bytes	ModifyStagingControls
