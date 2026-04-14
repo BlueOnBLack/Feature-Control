@@ -205,6 +205,230 @@ typedef struct _KERNEL_FEATURE_TABLE {
 ```
 ---
 
+```id="wnf-doc"
+# 🧠 WNF Feature Control – Internal API Notes
+
+This documents how Windows Feature Configuration is exposed through the  
+**WNF (Windows Notification Facility)** layer — the *real data channel* behind feature staging.
+
+---
+
+## 📦 Core Idea
+
+- WNF = **global feature state storage**
+- fcon.dll = **frontend (intent)**
+- WNF = **transport + persistence**
+- ntoskrnl = **final authority**
+
+💡 Before modern APIs → features were **just WNF blobs**
+
+---
+
+## 📋 Data Structures (C++)
+
+### WNF_FEATURE_ENTRY (12 bytes)
+
+```
+
+FeatureId
+PackedBits
+Payload
+
+```id="wnf12"
+
+It does:
+→ represents **one feature in kernel format**  
+→ already matches **12-byte runtime struct**
+
+---
+
+### WNF_FEATURE_UPDATE (Header)
+
+```
+
+Version
+FeatureCount
+Properties
+
+```id="wnfhead"
+
+It does:
+→ describes a **batch update**
+→ tells kernel how many features follow
+
+---
+
+### WNF_FEATURE_INFO (Parsed View)
+
+```
+
+FeatureId
+Service/User/Test states
+Kind
+Payload
+
+```id="wnfinfo"
+
+It does:
+→ human-readable interpretation  
+→ combines all priority layers  
+
+---
+
+## 🛠 LOW-LEVEL API
+
+### ntdll.dll → NtQueryWnfStateData
+
+```
+
+NtQueryWnfStateData(...)
+
+```id="ntq"
+
+It does:
+→ reads raw WNF blob  
+→ returns packed feature data  
+
+---
+
+### ntdll.dll → NtUpdateWnfStateData
+
+```
+
+NtUpdateWnfStateData(...)
+
+```id="ntu"
+
+It does:
+→ writes feature updates into WNF  
+→ triggers system-wide changes  
+
+💡 this is the **real write primitive**
+
+---
+
+## 🔍 INTERNAL RESOLUTION
+
+### EditionUpgradeManagerObj.dll  
+Functions:
+- wil_details_StagingConfig_Load  
+- wil_details_StagingConfig_QueryFeatureState  
+
+It does:
+→ parses WNF blob  
+→ resolves **effective feature state**  
+
+---
+
+### ntoskrnl.exe  
+Functions:
+- NtQueryWnfStateData  
+- ExpCaptureWnfStateName  
+
+It does:
+→ validates + routes WNF access  
+→ enforces kernel rules  
+
+---
+
+## 🧠 BITFIELD (IMPORTANT)
+
+```
+
+bits 8-9   → ServiceState
+bits 10-11 → UserState
+bits 12-13 → TestState
+bits 30-31 → Kind
+Payload    → separate field
+
+```id="wnfbits"
+
+It does:
+→ stores **all priority layers at once**  
+
+💡 multiple states exist → kernel picks one
+
+---
+
+## ⚙️ STATE RESOLUTION
+
+```
+
+Test > User > Service
+
+```id="priority"
+
+It does:
+→ highest non-zero wins  
+
+💡 setting Service state may do nothing if User/Test exists
+
+---
+
+## 🔄 FLOW
+
+```
+
+Set-WnfFeatureConfig
+→ builds WNF buffer
+→ NtUpdateWnfStateData
+→ WNF updated
+→ kernel + WIL resolve state
+
+```id="flow2"
+
+---
+
+## 📥 READ FLOW
+
+```
+
+NtQueryWnfStateData
+→ raw buffer
+→ parse entries (12B each)
+→ extract bits
+→ build readable objects
+
+```id="readflow"
+
+---
+
+## ⚠️ IMPORTANT BEHAVIOR
+
+- Features stored as **packed bitfields**
+- Multiple priorities coexist
+- Kernel may **mask bits dynamically**
+- Invalid entries are silently ignored
+
+---
+
+## 🧪 EXTRA INSIGHT
+
+- WNF state = **single shared blob per store**
+- Two main stores:
+```
+
+User
+Machine
+
+```id="stores"
+
+- Flags can **strip states or payloads** at runtime
+- Variant list stored separately (extra table)
+
+---
+
+## 🔥 TL;DR
+
+- WNF = **real feature backend**
+- fcon = **frontend wrapper**
+- ntoskrnl = **decision maker**
+
+→ You don’t set features directly  
+→ You **write into WNF and let kernel decide**
+```
+---
+
 # 🧠 FCON Feature Control – Internal API Notes
 
 This documentation details the low-level structures and exported functions found in `fcon.dll` used for managing Windows Feature Configuration (Staging).
