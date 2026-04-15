@@ -1420,10 +1420,20 @@ function Write-FeatureData {
         $VariantPayloadKind = 1
     }
 
+    <#
+         <-- FCON, DLL results, Variant stored at Payload -->
+
+        FeatureId      State     Variant      Kind     Payload  
+        ---------      -----     -------      ----     -------  
+        2642149007        2          2          1          20  
+        4011992206        2          2          1          50    
+        4109366415        2          2          1          15   
+    #>
+
     [Buffer]::BlockCopy([BitConverter]::GetBytes($FeatureId), 0, $data, 0, 4)              # 0x00
     [Buffer]::BlockCopy([BitConverter]::GetBytes($Priority), 0, $data, 4, 4)               # 0x04
     [Buffer]::BlockCopy([BitConverter]::GetBytes($VariantPayloadKind), 0, $data, 20, 4)    # 0x14
-    [Buffer]::BlockCopy([BitConverter]::GetBytes($VariantPayload), 0, $data, 24, 4)        # 0x18
+    [Buffer]::BlockCopy([BitConverter]::GetBytes($Variant), 0, $data, 24, 4)               # 0x18
     [Buffer]::BlockCopy([BitConverter]::GetBytes($Operation), 0, $data, 28, 4)             # 0x1C
     
     # Legacy Slot (0x08)
@@ -1438,21 +1448,13 @@ function Write-FeatureData {
         # Nuke it! Ensure offset 16 is strictly zeroed for Disabled/Default states.
         $data[16] = 0x00
 
-    } elseif ($Variant -gt 15) {
-        
-        # Option: PURE VARIANT (Legacy/fcon style)
-        # Preservation: Keeps all 6 bits of the Variant (up to 63).
-        # Consequence: Overwrites the 3-Bucket state (Bits 8-13).
-        $data[16] = [byte]($Variant -band 0x3F)
-        
-        Write-Warning "Variant > 15: Overwriting Buckets 8-13. State preserved at 0x08."
-
     } elseif ($Variant -gt 0x0) {
         
         # Option: HYBRID (Modern/Hybrid style)
         # Preservation: Keeps both State and Variant.
         # Logic: State in Bits 4-5 (Policy), Variant in Bits 0-3 (Low Var).
-        $data[16] = [byte]((($EnabledState -band 0x03) -shl 4) -bor ($Variant -band 0x0F))
+        # Set Varaint using 0x2 Type, The real Variant Stored payload .. !
+        $data[16] = [byte]((($EnabledState -band 0x03) -shl 4) -bor (0x2 -band 0x0F))
 
     } else {
 
@@ -1828,7 +1830,7 @@ function Get-FeatureObjectFromPtr {
                                 #$Info.Variant = ($flags -shr 8) -band 0x3F
     $Info.Variant              = $Info.Variant = (($flags -shr 8) -band 0x3F) -band 0x1F # -band 0x03 to satisfy kernel
     $Info.VariantPayloadKind   = ($flags -shr 14) -band 0x3
-    $Info.VariantPayload       = '0x{0:X8}' -f [uint32]$vPay
+    $Info.VariantPayload       = [uint32]$vPay
     $Info.Reserved             = 0 #($flags -shr 16) -band 0xFFFF
 
     return $Info
@@ -2102,7 +2104,7 @@ function Get-KernelObjectFromPtr {
     $kObj.Variant                 = (($flags -shr 8) -band 0x3F) -band 0x1F
 
     $kObj.VariantPayloadKind      = ($flags -shr 14) -band 0x3
-    $kObj.VariantPayload          = ('0x{0:X8}' -f [uint32]$vPay)
+    $kObj.VariantPayload          = [uint32]$vPay
     $kObj.VariantPayloadKindFinal = ($flags -shr 30) -band 0x3
     $kObj.HasNonDefaultState      = [bool](($flags -band 0x2) -ne 0)
     $kObj.Bit0                    = [bool](($flags -band 0x1) -eq 0)
@@ -2729,7 +2731,7 @@ Clear-Host
 Write-Host
 
 # Set Feature List
-$Variant    = 0,1,2
+$Variant    = 00,20,15
 $Feature    = 57517687, 58755790, 59064570
 $UserPath   = "HKLM:\SYSTEM\CurrentControlSet\Control\FeatureManagement\Overrides\8"
 $PolicyPath = 'HKLM:SYSTEM\CurrentControlSet\Policies\Microsoft\FeatureManagement\Overrides'
@@ -2767,22 +2769,26 @@ $Overrides | % { Get-ItemProperty $_.PSPath } | Format-Table `
     @{Expression="VariantPayloadKind";  Label="Kind";          Alignment="Center"; Width=10}
 
 Write-Host "  * Query, Mode:User" -ForegroundColor Green
-$UserQuery | Format-Table @{Expression="FeatureId"; Alignment="Center"; Width=15},
-             @{Expression="Priority"; Alignment="Center"; Width=10},
-             @{Expression="EnabledState"; Alignment="Center"; Width=15},
-             @{Expression="Variant"; Alignment="Center"; Width=10},
-             @{Expression="VariantPayloadKind"; Alignment="Center"; Width=20},
-             @{Expression="IsWexpConfiguration"; Alignment="Center"; Width=20},
-             @{Expression="HasSubscriptions"; Alignment="Center"; Width=18}
+$UserQuery | Format-Table `
+    @{Expression="FeatureId";           Label="Feature ID"; Alignment="Center"; Width=12},
+    @{Expression="Priority";            Label="Priority";   Alignment="Center"; Width=10},
+    @{Expression="EnabledState";        Label="State";      Alignment="Center"; Width=12},
+    @{Expression="Variant";             Label="Variant";    Alignment="Center"; Width=10},  # This is the 0-63 ID
+    @{Expression="VariantPayload";      Label="Payload";    Alignment="Center"; Width=15},  # This is the 50, 20, 15 value
+    @{Expression="VariantPayloadKind";  Label="Kind";       Alignment="Center"; Width=10},
+    @{Expression="IsWexpConfiguration"; Label="WEXP";       Alignment="Center"; Width=8 },
+    @{Expression="HasSubscriptions";    Label="Subs";       Alignment="Center"; Width=8 }
 
 Write-Host "  * Query, Mode:Kernel" -ForegroundColor Green
-$KernelQuery | Format-Table @{Expression="FeatureId"; Alignment="Center"; Width=15},
-             @{Expression="Priority"; Alignment="Center"; Width=10},
-             @{Expression="EnabledState"; Alignment="Center"; Width=15},
-             @{Expression="Variant"; Alignment="Center"; Width=10},
-             @{Expression="VariantPayloadKind"; Alignment="Center"; Width=20},
-             @{Expression="IsWexpConfiguration"; Alignment="Center"; Width=20},
-             @{Expression="HasSubscriptions"; Alignment="Center"; Width=18}
+$KernelQuery | Format-Table `
+    @{Expression="FeatureId";           Label="Feature ID"; Alignment="Center"; Width=12},
+    @{Expression="Priority";            Label="Priority";   Alignment="Center"; Width=10},
+    @{Expression="EnabledState";        Label="State";      Alignment="Center"; Width=12},
+    @{Expression="Variant";             Label="Variant";    Alignment="Center"; Width=10},  # This is the 0-63 ID
+    @{Expression="VariantPayload";      Label="Payload";    Alignment="Center"; Width=15},  # This is the 50, 20, 15 value
+    @{Expression="VariantPayloadKind";  Label="Kind";       Alignment="Center"; Width=10},
+    @{Expression="IsWexpConfiguration"; Label="WEXP";       Alignment="Center"; Width=8 },
+    @{Expression="HasSubscriptions";    Label="Subs";       Alignment="Center"; Width=8 }
 
 
 Write-Host "  * WNF, Mode: Enable`n" -ForegroundColor Green
