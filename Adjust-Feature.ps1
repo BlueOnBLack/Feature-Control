@@ -1634,37 +1634,28 @@ function Set-FeatureConfiguration {
     try {
         $idx = -1
         foreach ($f in $Feature) {
-            ++$idx
-            if ($Variant -and $Variant.Count -ge 0) {
 
-                # Start with the 'Windows Promotion' defaults
-                # If we are enabling, Windows wants 2 and 1.
-                $variantValue = 0x02
-                $vPayloadKind = 0x01
-    
+            ++$idx
+            $variantValue = 0
+            $vPayloadKind = 0
+            $variantType  = 0
+
+            if ([int]$EnabledState -eq 2 -and (
+                $Variant -and $Variant.Count -ge 0)) {
                 if ($Variant.Count -gt $idx) {
-                    $variantValue = $Variant[$idx]
-        
-                    # If user explicitly wants 0, we drop the payload kind
-                    if ($variantValue -eq 0) {
-                        $vPayloadKind = 0
-                    } else {
-                        $vPayloadKind = 1
+                    $variantValue = $Variant[$idx] 
+                    if ($variantValue -gt 0) {
+                        $vPayloadKind = 0x1
+                        $variantType  = 0x2
                     }
                 }
-
-            } else {
-
-                # No Variant array provided at all? 
-                # Use the "Standard Enabled" profile so Registry matches Memory.
-                $variantValue = 2
-                $vPayloadKind = 1
             }
+
             $properties = @(
                 @{ Name = "EnabledState";          Value = [int]$EnabledState },
                 @{ Name = "EnabledStateOptions";   Value = 0 },
-                @{ Name = "Variant";               Value = $variantValue },
-                @{ Name = "VariantPayload";        Value = 0x0 },
+                @{ Name = "Variant";               Value = $variantType },
+                @{ Name = "VariantPayload";        Value = $variantValue },
                 @{ Name = "VariantPayloadKind";    Value = $vPayloadKind }
             )
 
@@ -2756,17 +2747,15 @@ Write-Host "  * RTL, User/Kernel Mode: Enable & Set Variant" -ForegroundColor Gr
 Set-FeatureConfiguration -Feature $Feature -Variant $Variant -Action Enable -Mode User   -Store Runtime | Out-Null
 Set-FeatureConfiguration -Feature $Feature -Variant $Variant -Action Enable -Mode Policy -Store Runtime | Out-Null
 
-$Overrides = Get-ChildItem $UserPath -ea 0
+Get-ChildItem $UserPath -ea 0 | % { Get-ItemProperty $_.PSPath } | 
+    Format-Table @{n='FeatureId';e='PSChildName';a='Center';w=15}, 
+                 @{n='State';e='EnabledState';a='Center';w=10}, 
+                 @{n='Variant';e='Variant';a='Center';w=10}, 
+                 @{n='Kind';e='VariantPayloadKind';a='Center';w=10}, 
+                 @{n='Payload';e='VariantPayload';a='Center';w=10}
+
 $UserQuery = Query-FeatureConfiguration -Feature $Feature
 $KernelQuery = Query-KernelFeatureState -Feature $Feature -ApplyFlags
-
-$Overrides | % { Get-ItemProperty $_.PSPath } | Format-Table `
-    @{Expression="PSChildName";         Label="Feature ID";    Alignment="Center"; Width=15},
-    @{Expression="EnabledState";        Label="State";         Alignment="Center"; Width=12},
-    @{Expression="EnabledStateOptions"; Label="Options";       Alignment="Center"; Width=15},
-    @{Expression="Variant";             Label="Variant";       Alignment="Center"; Width=10},
-    @{Expression="VariantPayload";      Label="Payload";       Alignment="Center"; Width=15},
-    @{Expression="VariantPayloadKind";  Label="Kind";          Alignment="Center"; Width=10}
 
 Write-Host "  * Query, Mode:User" -ForegroundColor Green
 $UserQuery | Format-Table `
