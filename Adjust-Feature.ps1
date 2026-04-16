@@ -1818,11 +1818,10 @@ function Get-FeatureObjectFromPtr {
     $Info.IsWexpConfiguration  = (($flags -shr 6) -band 0x1)
     $Info.HasSubscriptions     = [bool](($flags -shr 7) -band 0x1)
 
-                                #$Info.Variant = ($flags -shr 8) -band 0x3F
-    $Info.Variant              = $Info.Variant = (($flags -shr 8) -band 0x3F) -band 0x1F # -band 0x03 to satisfy kernel
+    $Info.Variant              = $Info.Variant = (($flags -shr 8) -band 0x3F) -band 0x1F
     $Info.VariantPayloadKind   = ($flags -shr 14) -band 0x3
     $Info.VariantPayload       = [uint32]$vPay
-    $Info.Reserved             = 0 #($flags -shr 16) -band 0xFFFF
+    $Info.Reserved             = 0x0 #($flags -shr 16) -band 0xFFFF
 
     return $Info
 }
@@ -2778,7 +2777,6 @@ $KernelQuery | Format-Table `
     @{Expression="VariantPayloadKind";  Label="Kind";       Alignment="Center"; Width=10},
     @{Expression="IsWexpConfiguration"; Label="WEXP";       Alignment="Center"; Width=8 },
     @{Expression="HasSubscriptions";    Label="Subs";       Alignment="Center"; Width=8 }
-
 
 Write-Host "  * WNF, Mode: Enable`n" -ForegroundColor Green
 Set-WnfFeatureConfig -Store User    -Mode Enable   -Feature $Feature | Out-Null
