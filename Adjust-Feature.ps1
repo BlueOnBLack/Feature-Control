@@ -1213,6 +1213,54 @@ _BOOL8 __fastcall wil_details_StagingConfigFeature_HasUniqueState(_DWORD *a1)
 }
 #>
 
+# SPPSVC FEATURE DISCOVERY LOGIC
+<#
+// ============================================================================
+// SPPSVC FEATURE DISCOVERY LOGIC (SUMMARY)
+// ============================================================================
+
+METHOD 1: MODERN API (RtlQueryFeatureConfiguration)
+--------------------------------------------------
+Type: Dynamic OS Call (ntdll.dll)
+Target: Live Windows Kernel Feature Store
+Logic: Bit-Packed (Front-Heavy)
+
+[Modern Unpacker Pseudo]
+State    = (RawData >> 4)  & 0x3   // Status at Bits 4-5
+Priority = (RawData >> 14) & 0x3   // Priority at Bits 14-15
+Variant  = (RawData >> 8)  & 0x3F  // Variant at Byte 1
+UserEdit = (RawData >> 6)  & 0x1   // Toggle at Bit 6
+Locked   = (RawData >> 7)  & 0x1   // Lock at Bit 7
+
+
+METHOD 2: LEGACY TABLE (Internal Feature List)
+----------------------------------------------
+Type: Static Manual Search
+Target: 12-Byte Row Internal Table at v19
+Logic: High-Shift (End-Heavy)
+
+[Legacy Unpacker Pseudo]
+State    = Function_Return_v8      // Success = Enabled
+Priority = (RawData >> 30) & 0x3   // Priority at Bits 30-31
+Variant  = (RawData >> 24) & 0x3F  // Variant at High Byte
+UserEdit = (RawData >> 1)  & 0x1   // Toggle at Bit 1
+Override = (RawData >> 12) & 0x3   // Emergency State at Bits 12-13
+
+
+EXECUTION FLOW
+--------------
+1. CALL sub_140055C04 (Modern API).
+   IF SUCCESS -> Use Modern Unpacker -> DONE.
+   
+2. IF FAIL -> CALL sub_140055AAC (Legacy Fallback).
+   a. sub_14005545C: Map internal table (The Warehouse).
+   b. sub_140055744: Search table for ID (The Researcher).
+   c. Loop v12 += 12: Check Global Kill-Switches (0x300, 0xC00, etc).
+   d. IF NOT KILLED -> Use Legacy Unpacker -> DONE.
+
+// ============================================================================ 
+#>
+
 # Base opeartion
 Function Init-RTL {
     
@@ -2316,6 +2364,8 @@ function Parse-GeatureObject {
 
 #endregion
 #region "Feature, WNF"
+
+# Background
 <#
 Based on mach2
 https://github.com/riverar/mach2
@@ -2371,6 +2421,80 @@ RtlSubscribeForFeatureUsageNotification
 RtlUnregisterFeatureConfigurationChangeNotification
 RtlUnsubscribeFromFeatureUsageNotifications
 #>
+
+# SPPSVC FEATURE Set LOGIC
+<#
+// ============================================================================
+// WNF FEATURE CONFIGURATION DISPATCHER (SUMMARY)
+// ============================================================================
+
+METHOD 1: DISPATCHER (sub_140057DEC)
+--------------------------------------------------
+Type: Logical Router / Store Selector
+Target: Multiple WNF "Velocity" State Names
+Logic: Offset-based Branching (a1 Buffer)
+
+[Store Mapping Logic]
+Group 1 (a1[56])  -> Stores: 1C75, 2475, 2C75 (3 total)
+Group 2 (a1[120]) -> Stores: 3475, 3C75, 4475 (3 total)
+Group 3 (a1[184]) -> Stores: 4C75 to 7475      (6 total)
+
+
+METHOD 2: SERIALIZER (sub_14005796C)
+----------------------------------------------
+Type: Binary Blob Constructor
+Target: Memory Struct Construction (WNF_UPDATE)
+Logic: Pointer Arithmetic & Bit-Packing
+
+[Struct Assembly Pseudo]
+Header.Version = *a3              // 0x00: Version Logic
+Header.Size    = *(a3 + 2)        // 0x02: Header Size (16 bytes)
+Entry.ID       = *(a3 + 2)        // 0x02: Feature ID
+Entry.Bits     = *(a3 + 4) << 8   // 0x04: State packed at Bit 8 (Velocity)
+Entry.Payload  = *(a3 + 24)       // 0x18: Data Payload if applicable
+
+
+STRUCT LAYOUT (Derived from sub_14005796C)
+----------------------------------------------
+[WNF_FEATURE_UPDATE_HEADER] (Size: 16 Bytes)
+Offset | Type   | Name              | Source
+0x00   | WORD   | Version           | v36[0] = *(_WORD *)a3
+0x02   | WORD   | HeaderSize        | v36[1] = *(_WORD *)(a3 + 2)
+0x04   | BYTE   | FeatureCount      | v37 = *(_BYTE *)(a3 + 4)
+0x05   | BYTE   | Padding/Reserved  | Derived from stack alignment
+0x06   | WORD   | VariantCount      | v38 = *(_WORD *)(a3 + 6)
+0x08   | BYTE   | UpdateState       | v39 = *(_BYTE *)(a3 + 8)
+0x09   | BYTE[7]| Padding           | To align next entry to 16
+
+[WNF_FEATURE_ENTRY] (Size: 12 Bytes)
+Offset | Type   | Name              | Source
+0x00   | DWORD  | FeatureId         | LOWORD(v34) = *(_WORD *)(a3 + 2)
+0x04   | DWORD  | PackedBits        | BYTE2(v34) = *(_BYTE *)(a3 + 4) (SHL 8)
+0x08   | DWORD  | Payload           | v33 = v14 + 10
+
+
+EXECUTION FLOW
+--------------
+1. CALL sub_140057DEC (The Architect).
+   a. Evaluates a1 (Context Buffer) for target flags at +56, +120, +184.
+   b. Prepares stack-allocated array of 64-bit WNF State Names (v3-v8).
+   
+2. CALL sub_14005796C (The Builder).
+   a. sub_140055010: Query existing WNF state (Get Current).
+   b. sub_1400570AC: Compare/Merge logic for feature entries.
+   c. Loop LABEL_14: Iterate through FeatureCount.
+      i.   Pack ID, State, and Payload into temporary __int128 slots.
+      ii.  sub_140056EE4: Validate against Variant List.
+      iii. Build final 12-byte per-feature rows.
+
+3. CALL sub_1400550C0 (The Messenger).
+   a. Resolve ntdll!NtUpdateWnfStateData via GetProcAddress.
+   b. Trigger Syscall with Constructed Buffer + ChangeStamp.
+   c. DONE: Features toggled live in Kernel.
+
+// ============================================================================ 
+#>
+
 function Init-WNF {
     
     # Define the WNF feature entry struct
